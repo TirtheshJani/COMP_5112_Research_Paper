@@ -9,7 +9,7 @@ dependencies = ["numpy>=2.0", "opencv-python>=4.10"]
 dev = ["pytest>=8", "ruff>=0.6", "hypothesis>=6"]
 experiment = ["matplotlib>=3.9", "scipy>=1.14"]
 robot = ["reachy-mini"]            # S3 pins the exact version after the probes
-voice = []                         # S4 fills this in
+voice = ["piper-tts>=1.3", "sounddevice>=0.5", "faster-whisper>=1.0", "onnxruntime>=1.18"]
 viewer = ["flask>=3"]
 print = ["reportlab>=4", "pillow>=10", "pypdfium2>=4"]
 
