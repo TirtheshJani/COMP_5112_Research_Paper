@@ -1,0 +1,188 @@
+"""The Reachy Mini Wireless behind the four Protocols of jigsaw.types (CONTRACTS.md section 3, S3 R6 to R11).
+
+connect(host) returns a ReachyRobot that is a FrameSource, Gestures, AudioOut and AudioIn. This is the
+only module that calls goto_target and push_audio_sample (CLAUDE.md rule 6). reachy_mini is imported
+inside connect(), so `import jigsaw.robot.reachy` works without the SDK.
+
+SDK facts used here, from reachy-mini 1.15.0:
+- media.get_frame() returns (H, W, 3) uint8 BGR or None; the WebRTC client asks GStreamer for
+  format=BGR and converts nothing (media/webrtc_client_gstreamer.py:170, read() at :346).
+- camera.K is rescaled to the current resolution, camera.D is not resolution dependent
+  (media/camera_base.py:90-103). Both read over the network: results/probes/p2.txt.
+- goto_target blocks until the move ends (reachy_mini.py:724) and raises MoveBusyError
+  (io/protocol.py:1145) while another move runs (io/ws_client.py:324).
+- push_audio_sample is non-blocking, takes float32 (N,) and upmixes mono; start_playing() is a no-op on
+  the remote client; both rates are 16000 (media/audio_base.py:116, :130-161; media_manager.py:298-340).
+- get_audio_sample returns float32 (N, 2) or None (media/audio_base.py:188).
+"""
+import logging
+import time
+from collections.abc import Callable, Iterator
+
+import numpy as np
+
+from jigsaw.types import Frame
+
+log = logging.getLogger(__name__)
+
+FIRST_FRAME_TIMEOUT_S = 5.0
+HELP = ("Check three things: (1) the robot is powered on and has finished booting; (2) the laptop is on the "
+        "same Wi-Fi as the robot (if reachy-mini.local does not resolve, pass the robot's IP address as host); "
+        "(3) the conversation app is stopped in the robot's dashboard, because it holds the camera and audio.")
+
+# (head pose keyword arguments in degrees, duration in seconds); each gesture ends at neutral.
+NOD = (({"pitch": 10}, 0.3), ({"pitch": -6}, 0.3), ({}, 0.3))
+SHAKE = (({"yaw": 10}, 0.3), ({"yaw": -10}, 0.4), ({}, 0.3))
+
+
+def resample(pcm: np.ndarray, rate: int, out_rate: int) -> np.ndarray:
+    """Mono float32 pcm from rate to out_rate: windowed-sinc low-pass when downsampling, then linear."""
+    n_out = round(len(pcm) * out_rate / rate)
+    if rate == out_rate or len(pcm) == 0:
+        return pcm.astype(np.float32)
+    x = pcm.astype(np.float64)
+    if out_rate < rate:
+        fc = 0.45 * out_rate / rate                  # cycles per input sample, below the new Nyquist
+        n = np.arange(-31, 32)
+        h = 2 * fc * np.sinc(2 * fc * n) * np.hamming(len(n))
+        x = np.convolve(x, h / h.sum(), mode="same")
+    t = np.arange(n_out) * (rate / out_rate)
+    return np.interp(t, np.arange(len(x)), x).astype(np.float32)
+
+
+def _is_move_busy(e: BaseException) -> bool:
+    return any(c.__name__ == "MoveBusyError" for c in type(e).__mro__)
+
+
+class ReachyRobot:
+    """FrameSource, Gestures, AudioOut and AudioIn over one connected ReachyMini (`mini`).
+
+    head_pose builds a head target from pitch/yaw keywords in degrees (reachy_mini.utils.create_head_pose).
+    """
+
+    name = "reachy"
+
+    def __init__(self, mini, head_pose: Callable[..., object]):
+        self.mini, self.head_pose = mini, head_pose
+        media = mini.media
+        self.out_rate = int(media.get_output_audio_samplerate())
+        self.rate = int(media.get_input_audio_samplerate())
+        media.start_playing()
+        media.start_recording()
+        self._closed = False
+        self._play_until = 0.0
+
+    # FrameSource
+
+    def _intrinsics(self) -> tuple[np.ndarray | None, np.ndarray | None]:
+        out = []
+        for attr in ("K", "D"):
+            try:
+                v = getattr(self.mini.media.camera, attr)
+            except Exception as e:  # the camera raises RuntimeError before its resolution is known
+                log.info("camera.%s unavailable: %r", attr, e)
+                v = None
+            out.append(None if v is None else np.asarray(v, dtype=float))
+        return out[0], out[1]
+
+    def frames(self) -> Iterator[Frame]:
+        K, D = self._intrinsics()
+        while not self._closed:
+            try:
+                image = self.mini.media.get_frame()
+            except Exception:
+                if self._closed:
+                    return
+                raise
+            if image is None:
+                time.sleep(0.005)
+                continue
+            # UNVERIFIED: BGR channel order (media/webrtc_client_gstreamer.py:170); needs the red-object check in p2.
+            yield Frame(image, time.monotonic(), K, D)
+
+    def _wait_for_frame(self, timeout: float) -> bool:
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout:
+            if self.mini.media.get_frame() is not None:
+                return True
+            time.sleep(0.02)
+        return False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for stop in ("stop_recording", "stop_playing"):
+            try:
+                getattr(self.mini.media, stop)()
+            except Exception as e:
+                log.warning("%s failed: %r", stop, e)
+        self.mini.__exit__(None, None, None)
+
+    # Gestures
+
+    def _gesture(self, name: str, steps) -> None:
+        # UNVERIFIED: goto_target blocks until the move ends and raises MoveBusyError (reachy_mini.py:724,
+        # io/ws_client.py:324); seen only on the mockup simulator so far.
+        for kw, duration in steps:
+            try:
+                self.mini.goto_target(head=self.head_pose(**kw, degrees=True), duration=duration)
+            except Exception as e:
+                if not _is_move_busy(e):
+                    raise
+                log.warning("%s skipped: robot busy with another move (%s)", name, e)
+                return
+
+    def nod(self) -> None:
+        self._gesture("nod", NOD)
+
+    def shake(self) -> None:
+        self._gesture("shake", SHAKE)
+
+    # AudioOut
+
+    def play(self, pcm: np.ndarray, rate: int) -> None:
+        pcm = np.asarray(pcm, dtype=np.float32)
+        if pcm.ndim != 1:
+            raise ValueError(f"play expects mono pcm, got shape {pcm.shape}")
+        pcm = resample(pcm, rate, self.out_rate)
+        if len(pcm) == 0:
+            return
+        self._play_until = time.monotonic() + len(pcm) / self.out_rate
+        # UNVERIFIED: push_audio_sample returns at once and plays at 16 kHz (media/audio_base.py:130-161).
+        self.mini.media.push_audio_sample(pcm)
+        time.sleep(max(0.0, self._play_until - time.monotonic()))
+
+    def is_playing(self) -> bool:
+        return time.monotonic() < self._play_until
+
+    # AudioIn
+
+    def read(self) -> np.ndarray | None:
+        # UNVERIFIED: float32 (N, 2) or None at 16 kHz (media/audio_base.py:188).
+        s = self.mini.media.get_audio_sample()
+        if s is None or len(s) == 0:
+            return None
+        s = np.asarray(s, dtype=np.float32)
+        return s.mean(axis=1, dtype=np.float32) if s.ndim == 2 else s
+
+
+def connect(host: str | None = None) -> ReachyRobot:
+    """Connect to the robot (reachy-mini.local when host is None) and wait for the first camera frame."""
+    try:
+        from reachy_mini import ReachyMini
+        from reachy_mini.utils import create_head_pose
+    except ImportError as e:
+        raise ImportError("reachy-mini is not installed: uv sync --extra robot") from e
+    where = host or "reachy-mini.local"
+    kwargs = {"connection_mode": "network", "host": host} if host else {}
+    try:
+        mini = ReachyMini(**kwargs)
+    except Exception as e:
+        raise ConnectionError(f"Cannot connect to the Reachy Mini at {where}: {e}. {HELP}") from e
+    robot = ReachyRobot(mini, create_head_pose)
+    if not robot._wait_for_frame(FIRST_FRAME_TIMEOUT_S):
+        robot.close()
+        raise ConnectionError(f"Connected to the Reachy Mini at {where}, but no camera frame arrived in "
+                              f"{FIRST_FRAME_TIMEOUT_S:g} s. {HELP}")
+    return robot

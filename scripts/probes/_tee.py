@@ -1,4 +1,4 @@
-"""Copy everything a probe prints into results/probes/<name>.txt (UTF-8), so later sessions can read it."""
+"""Copy everything a probe prints, stdout and stderr (tracebacks, SDK warnings), into results/probes/<name>.txt."""
 import sys
 from pathlib import Path
 
@@ -22,5 +22,7 @@ class _Tee:
 def tee(name: str) -> Path:
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / f"{name}.txt"
-    sys.stdout = _Tee(sys.__stdout__, open(path, "w", encoding="utf-8"))
+    log = open(path, "w", encoding="utf-8")
+    sys.stdout = _Tee(sys.__stdout__, log)
+    sys.stderr = _Tee(sys.__stderr__, log)
     return path
