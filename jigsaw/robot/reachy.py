@@ -77,13 +77,15 @@ class ReachyRobot:
     """FrameSource, Gestures, AudioOut and AudioIn over one connected ReachyMini (`mini`).
 
     head_pose builds a head target from pitch/yaw keywords in degrees (reachy_mini.utils.create_head_pose).
-    clock gives Frame.t and times the no-new-frame warning (tests inject a fake one).
+    clock gives Frame.t, times the no-new-frame warning and times play(); play() blocks with sleep (tests inject
+    fakes for both).
     """
 
     name = "reachy"
 
-    def __init__(self, mini, head_pose: Callable[..., object], clock: Callable[[], float] = time.monotonic):
-        self.mini, self.head_pose, self._clock = mini, head_pose, clock
+    def __init__(self, mini, head_pose: Callable[..., object], clock: Callable[[], float] = time.monotonic,
+                 sleep: Callable[[float], None] = time.sleep):
+        self.mini, self.head_pose, self._clock, self._sleep = mini, head_pose, clock, sleep
         media = mini.media
         self.out_rate = int(media.get_output_audio_samplerate())
         self.rate = int(media.get_input_audio_samplerate())
@@ -117,8 +119,9 @@ class ReachyRobot:
     def frames(self) -> Iterator[Frame]:
         """New camera frames only: None and a frame byte-identical to the previous one are skipped.
 
-        After STALL_WARN_S of waiting without a new frame it logs a warning (again every STALL_WARN_S) and keeps
-        waiting. Time the caller spends between two frames does not count as waiting.
+        Each yielded image is a copy, so an SDK that reuses one buffer neither hides new frames nor changes
+        frames already yielded. After STALL_WARN_S of waiting without a new frame it logs a warning (again every
+        STALL_WARN_S) and keeps waiting. Time the caller spends between two frames does not count as waiting.
         """
         K, D = self._intrinsics()
         prev = None
@@ -137,7 +140,7 @@ class ReachyRobot:
                     last_warn = now
                 time.sleep(0.005)
                 continue
-            prev = image
+            image = prev = image.copy()
             # UNVERIFIED: BGR channel order (media/webrtc_client_gstreamer.py:170); needs the red-object check in p2.
             yield Frame(image, now, self._k_for(K, image.shape[0]), D)
             last_new = last_warn = self._clock()     # the wait for the next frame starts when the caller asks
@@ -178,13 +181,15 @@ class ReachyRobot:
     def _gesture(self, name: str, steps) -> None:
         # UNVERIFIED: goto_target blocks until the move ends and raises MoveBusyError (reachy_mini.py:724,
         # io/ws_client.py:324); seen only on the mockup simulator so far.
-        for kw, duration in steps:
+        for i, (kw, duration) in enumerate(steps):
             try:
                 self.mini.goto_target(head=self.head_pose(**kw, degrees=True), duration=duration)
             except Exception as e:
                 if not _is_move_busy(e):
                     raise
-                log.warning("%s skipped: robot busy with another move (%s)", name, e)
+                where = "head not moved" if i == 0 else f"head left at {steps[i - 1][0]} degrees"
+                log.warning("%s stopped at step %d of %d: robot busy with another move (%s); %s",
+                            name, i + 1, len(steps), e, where)
                 return
 
     def nod(self) -> None:
@@ -202,13 +207,13 @@ class ReachyRobot:
         pcm = resample(pcm, rate, self.out_rate)
         if len(pcm) == 0:
             return
-        self._play_until = time.monotonic() + len(pcm) / self.out_rate
+        self._play_until = self._clock() + len(pcm) / self.out_rate
         # UNVERIFIED: push_audio_sample returns at once and plays at 16 kHz (media/audio_base.py:130-161).
         self.mini.media.push_audio_sample(pcm)
-        time.sleep(max(0.0, self._play_until - time.monotonic()))
+        self._sleep(max(0.0, self._play_until - self._clock()))
 
     def is_playing(self) -> bool:
-        return time.monotonic() < self._play_until
+        return self._clock() < self._play_until
 
     # AudioIn
 

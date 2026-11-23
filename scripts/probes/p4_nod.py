@@ -4,7 +4,9 @@
 
 Pitch and yaw of 10 degrees, 0.6 s each way, then back to neutral. Nothing moves without --move.
 Uses goto_target(head=create_head_pose(...), duration=...) from reachy-mini 1.15.0.
-UNVERIFIED on the robot until this probe has run.
+UNVERIFIED: goto_target (reachy_mini.py:674, waits for the move at :724) and create_head_pose
+(utils/__init__.py:14) on the real robot; p4 has run only on the mockup simulator and results/probes/p4.txt
+is empty.
 """
 import argparse
 

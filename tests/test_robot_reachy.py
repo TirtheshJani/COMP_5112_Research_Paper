@@ -148,6 +148,25 @@ def test_frames_skip_a_frame_identical_to_the_previous_one():
     assert [int(f.image[0, 0, 0]) for f in frames] == [1, 2, 1]
 
 
+class InPlaceMedia(StubMedia):
+    """An SDK that writes every frame into one buffer and returns that same array each time."""
+
+    def __init__(self, values):
+        super().__init__()
+        self.buf, self.values = img(0), list(values)
+
+    def get_frame(self):
+        if not self.values:
+            raise RuntimeError("no more frames")
+        self.buf[...] = self.values.pop(0)
+        return self.buf
+
+
+def test_frames_from_one_reused_buffer_are_new_and_stay_unchanged():
+    frames = list(itertools.islice(ReachyRobot(StubMini(InPlaceMedia([1, 1, 2, 3])), pose).frames(), 3))
+    assert [int(f.image[0, 0, 0]) for f in frames] == [1, 2, 3]       # read after the buffer was overwritten
+
+
 @pytest.mark.parametrize("n_nothing_new, n_warnings", [(7, 0), (8, 1), (16, 2)])
 def test_frames_warn_every_2_s_without_a_new_frame_and_keep_waiting(caplog, n_nothing_new, n_warnings):
     clock = FakeClock()
@@ -264,6 +283,30 @@ def test_move_busy_is_logged_not_raised(caplog):
     assert sum("busy" in r.getMessage().lower() for r in caplog.records) == 2
 
 
+class BusyAfter(StubMini):
+    """goto_target succeeds `n` times, then raises MoveBusyError."""
+
+    def __init__(self, n):
+        super().__init__()
+        self.n = n
+
+    def goto_target(self, head=None, **kw):
+        if len(self.moves) >= self.n:
+            raise MoveBusyError("a move is already running")
+        super().goto_target(head=head, **kw)
+
+
+@pytest.mark.parametrize("n, where", [(0, "head not moved"), (1, "head left at {'pitch': 10}"),
+                                      (2, "head left at {'pitch': -6}")])
+def test_move_busy_partway_through_a_nod_logs_where_the_head_was_left(caplog, n, where):
+    mini = BusyAfter(n)
+    with caplog.at_level(logging.WARNING, logger="jigsaw.robot.reachy"):
+        ReachyRobot(mini, pose).nod()
+    assert len(mini.moves) == n
+    msgs = [r.getMessage() for r in caplog.records if "busy" in r.getMessage()]
+    assert len(msgs) == 1 and where in msgs[0]
+
+
 def test_other_motion_errors_are_raised():
     mini = StubMini()
 
@@ -276,17 +319,22 @@ def test_other_motion_errors_are_raised():
 
 # Audio out (R9)
 
+def fake_sleep(clock: FakeClock, slept: list):
+    def sleep(s):
+        slept.append(s)
+        clock.t += s
+    return sleep
+
+
 def test_play_resamples_22050_to_16000_with_the_right_length_and_blocks():
-    mini = StubMini()
-    robot = ReachyRobot(mini, pose)
+    mini, clock, slept = StubMini(), FakeClock(), []
+    robot = ReachyRobot(mini, pose, clock=clock, sleep=fake_sleep(clock, slept))
     pcm = np.sin(2 * np.pi * 440 * np.arange(11025) / 22050).astype(np.float32)   # 0.5 s
-    t0 = time.monotonic()
     robot.play(pcm, 22050)
-    elapsed = time.monotonic() - t0
     out = np.concatenate(mini.media.pushed)
     assert out.dtype == np.float32 and out.ndim == 1
     assert len(out) == 8000
-    assert 0.45 <= elapsed < 0.8
+    assert sum(slept) == pytest.approx(0.5)                            # blocks for the duration
     # still a 440 Hz tone after resampling
     spectrum = np.abs(np.fft.rfft(out))
     assert abs(np.argmax(spectrum) * 16000 / len(out) - 440) < 5
@@ -300,16 +348,18 @@ def test_play_at_the_output_rate_pushes_samples_unchanged():
 
 
 def test_is_playing_is_true_until_the_duration_has_passed():
-    robot = ReachyRobot(StubMini(), pose)
-    seen = []
-    t = threading.Thread(target=robot.play, args=(np.zeros(4800, np.float32), 16000))   # 0.3 s
+    clock, seen = FakeClock(), []
+
+    def sleep(s):                                   # play() sleeps once, for the whole duration
+        seen.append(robot.is_playing())
+        clock.t += s - 0.01
+        seen.append(robot.is_playing())             # 10 ms before the end
+        clock.t += 0.01
+    robot = ReachyRobot(StubMini(), pose, clock=clock, sleep=sleep)
     assert robot.is_playing() is False
-    t.start()
-    time.sleep(0.1)
+    robot.play(np.zeros(4800, np.float32), 16000)   # 0.3 s
     seen.append(robot.is_playing())
-    t.join()
-    seen.append(robot.is_playing())
-    assert seen == [True, False]
+    assert seen == [True, True, False]
 
 
 def test_play_rejects_stereo():

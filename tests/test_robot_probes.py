@@ -1,11 +1,15 @@
 """Pure helpers of probes 5 (motion and media) and 6 (focus check). No robot: the probes only run on Friday."""
 import importlib.util
+import sys
+import time
+import types
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from jigsaw.types import Read, Reject
+from jigsaw.robot import reachy
+from jigsaw.types import Frame, Read, Reject
 
 PROBES = Path(__file__).resolve().parents[1] / "scripts" / "probes"
 
@@ -79,6 +83,69 @@ def test_report_ends_with_exactly_one_settling_line(settles, value):
     assert sum(line.startswith("settling_time_s:") for line in lines) == 1
 
 
+class FailingCamera:
+    def frames(self):
+        yield Frame(np.zeros((90, 160, 3), np.uint8), 0.0, None, None)
+        raise RuntimeError("camera gone")
+
+
+def test_frame_log_join_raises_when_its_thread_failed():
+    log = p5.FrameLog(FailingCamera())
+    with pytest.raises(RuntimeError, match="frame thread") as err:
+        log.join()
+    assert "camera gone" in str(err.value.__cause__)
+    assert log.times == [0.0]
+
+
+class StubRobot:
+    """Gives no frames until closed; nod() fails like a motor fault."""
+
+    def __init__(self):
+        self.closed = False
+
+    def frames(self):
+        while not self.closed:
+            time.sleep(0.005)
+        yield from ()
+
+    def nod(self):
+        raise RuntimeError("motor fault")
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def p5_move_run(monkeypatch, tmp_path):
+    """p5.main() with --move, output in tmp_path, no tee and no still phase; connect() is set by the test."""
+    monkeypatch.setitem(sys.modules, "_tee", types.SimpleNamespace(tee=lambda name: None))
+    monkeypatch.setattr(sys, "argv", ["p5_motion_media.py", "--move"])
+    monkeypatch.setattr(p5, "OUT", tmp_path)
+    monkeypatch.setattr(p5, "STILL_S", 0.0)
+    return tmp_path
+
+
+def test_p5_move_run_removes_an_old_report_before_it_connects(monkeypatch, p5_move_run):
+    (p5_move_run / "motion_media.md").write_text("settling_time_s: 0.40\n", encoding="utf-8")
+
+    def refuse(host):
+        raise ConnectionError("no robot")
+    monkeypatch.setattr(p5, "connect", refuse)
+    with pytest.raises(ConnectionError):
+        p5.main()
+    assert not (p5_move_run / "motion_media.md").exists()
+
+
+def test_p5_closes_the_robot_when_a_phase_fails(monkeypatch, p5_move_run):
+    robot = StubRobot()
+    monkeypatch.setattr(p5, "connect", lambda host: robot)
+    with pytest.raises(RuntimeError, match="motor fault"):
+        p5.main()
+    closed = robot.closed
+    robot.close()                                          # ends the frame thread if main did not
+    assert closed
+
+
 # Probe 6: pixels per cell, decision kind, summary, recommendation, report, CSV
 
 def test_px_per_cell_of_a_scaled_rotated_and_shifted_grid():
@@ -91,10 +158,23 @@ def test_px_per_cell_is_the_mean_of_the_two_cell_sides():
     assert p6.px_per_cell(np.diag([10.0, 14.0, 1.0]), (8, 6)) == pytest.approx(12.0)
 
 
-def test_kind_compares_row_and_column_only():
-    assert p6.kind(Read(3, 1, 2), 3, 1) == "correct"
-    assert p6.kind(Read(3, 2, 0), 3, 1) == "wrong"
-    assert p6.kind(Reject("no_grid"), 3, 1) == "rejected"
+def test_kind_checks_row_column_and_turn():
+    assert p6.kind(Read(3, 1, 2), 3, 1, 2) == "correct"
+    assert p6.kind(Read(3, 1, 0), 3, 1, 2) == "wrong"          # right cell, wrong turn
+    assert p6.kind(Read(3, 2, 2), 3, 1, 2) == "wrong"
+    assert p6.kind(Reject("no_grid"), 3, 1, 2) == "rejected"
+
+
+def test_p6_needs_the_true_turn(monkeypatch, capsys):
+    monkeypatch.setitem(sys.modules, "_tee", types.SimpleNamespace(tee=lambda name: None))
+    monkeypatch.setattr(sys, "argv", ["p6_focus.py", "--piece", "4", "2"])
+
+    def refuse(host=None):
+        raise ConnectionError("no robot in a unit test")
+    monkeypatch.setattr(reachy, "connect", refuse)
+    with pytest.raises(SystemExit) as err:
+        p6.main()
+    assert err.value.code == 2 and "--turn" in capsys.readouterr().err
 
 
 def rows_for(resolution, distance, correct, rejected=0, wrong=0, px=12.0):

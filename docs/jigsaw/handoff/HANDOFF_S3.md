@@ -49,25 +49,25 @@ Dry run. Add --move to let the head nod and shake (10 degrees) and play a 440 Hz
 ## UNVERIFIED marks (file:line)
 
 - `jigsaw/robot/reachy.py:58`: the 720p K correction (orchestrator instruction, DECISIONS.md entry 7 on main; no probe has measured it).
-- `jigsaw/robot/reachy.py:141`: BGR channel order of `get_frame()`.
-- `jigsaw/robot/reachy.py:179`: `goto_target` blocks until the move ends and raises `MoveBusyError` (seen only on the mockup simulator; `p4.txt` is empty).
-- `jigsaw/robot/reachy.py:206`: `push_audio_sample` returns at once and plays at 16 kHz.
-- `jigsaw/robot/reachy.py:216`: `get_audio_sample` gives float32 (N, 2) or None at 16 kHz.
+- `jigsaw/robot/reachy.py:144`: BGR channel order of `get_frame()`.
+- `jigsaw/robot/reachy.py:182`: `goto_target` blocks until the move ends and raises `MoveBusyError` (seen only on the mockup simulator; `p4.txt` is empty).
+- `jigsaw/robot/reachy.py:211`: `push_audio_sample` returns at once and plays at 16 kHz.
+- `jigsaw/robot/reachy.py:221`: `get_audio_sample` gives float32 (N, 2) or None at 16 kHz.
 - `scripts/probes/p2_camera.py:10`: BGR channel order (no red-object reading in `p2.txt`).
-- `scripts/probes/p4_nod.py:7`: p4 on the robot.
-- `scripts/probes/p5_motion_media.py:31`: p5 on the robot.
+- `scripts/probes/p4_nod.py:7`: `goto_target` and `create_head_pose` on the real robot (`reachy_mini.py:674`, `:724`; `utils/__init__.py:14`).
+- `scripts/probes/p5_motion_media.py:32`: p5's timing assumptions (`reachy_mini.py:724`, `media/media_manager.py:340`, `media/audio_base.py:130-161`, `media/webrtc_client_gstreamer.py:346`).
 - `scripts/probes/p6_focus.py:11`: how to get 1920 x 1080 from a remote client.
-- `scripts/probes/p6_focus.py:28`: p6 on the robot.
+- `scripts/probes/p6_focus.py:29`: p6's frames from `get_frame` (`media/webrtc_client_gstreamer.py:346`, `:160-166`).
 
 Removed: `scripts/probes/p1_status.py` (both endpoints answered on the real robot; `p1.txt` shows `wireless_version: true`, `simulation_enabled: false`, `mockup_sim_enabled: false`).
 
 ## Still needs the robot
 
 1. Live tests (R6, R7, R9, R10; a person watches the gestures and listens to the tone): `JIGSAW_LIVE=1 JIGSAW_HOST=10.0.0.100 uv run pytest tests/robot_live -o addopts="" -s`.
-2. p2 red-object check, because `p2.txt` does not settle BGR vs RGB (no red object was held; the whole-scene channel means do not decide it): `uv run python scripts/probes/p2_camera.py --host 10.0.0.100 --seconds 10` with something red filling the view. If the frames are BGR, the last channel mean rises. Then remove the marks at `reachy.py:141` and `p2_camera.py:10`.
-3. p4 again, because `p4.txt` is empty: `uv run python scripts/probes/p4_nod.py --host 10.0.0.100 --move`. Then `reachy.py:179`.
+2. p2 red-object check, because `p2.txt` does not settle BGR vs RGB (no red object was held; the whole-scene channel means do not decide it): `uv run python scripts/probes/p2_camera.py --host 10.0.0.100 --seconds 10` with something red filling the view. If the frames are BGR, the last channel mean rises. Then remove the marks at `reachy.py:144` and `p2_camera.py:10`.
+3. p4 again, because `p4.txt` is empty: `uv run python scripts/probes/p4_nod.py --host 10.0.0.100 --move`. Then `reachy.py:182`.
 4. p5: `uv run python scripts/probes/p5_motion_media.py --host 10.0.0.100 --move`. The operator answers one question about the tone. S6 copies the last line of `results/probes/motion_media.md` into `app.py`.
-5. p6 with a printed piece and the green card: `uv run python scripts/probes/p6_focus.py --host 10.0.0.100 --piece <row> <col> --resolution 1280x720`, then `--resolution 1920x1080` if the robot can be made to stream it (open question 1).
+5. p6 with a printed piece and the green card: `uv run python scripts/probes/p6_focus.py --host 10.0.0.100 --piece <row> <col> --turn <k> --resolution 1280x720`, then `--resolution 1920x1080` if the robot can be made to stream it (open question 1).
 6. A measurement of the 720p K correction. No probe measures it yet; one would need a target of known size at a measured distance.
 
 ## Skipped: MujocoSource (R12)
@@ -87,7 +87,48 @@ Not built. The simulator serves no camera to a client without the GStreamer webr
 2. Is the SDK's "No Reachy Mini Audio USB device found!" harmless for a remote client? The live audio tests will tell.
 3. Does `reachy-mini.local` resolve on this laptop? The saved probes do not say; versions.txt used the IP.
 4. I did not read DECISIONS.md (not in this session's read list). The formula and its explanation come from the task text.
+5. Should `connect()` move the head to neutral, as `S3_robot_io.md:159` says? It does not (Review findings, item 12).
 
 ## Review
 
-Not run. This session could not start subagents, so the `reviewer` subagent named in the workstream file still has to review commits 1db986a to the handoff commit.
+The session that wrote this branch could not start subagents. The `reviewer` subagent reviewed it afterwards; its findings and what was done about each are below.
+
+## Review findings
+
+Answered in the commit `fix(S3): review findings`. Nothing in that pass moved the robot, played sound on it or waited for a person; every new test uses stubs.
+
+| # | Finding | What was done |
+|---|---|---|
+| 1 | `frames()` kept `prev = image` without a copy: an SDK that reuses one buffer would hide every later frame and change frames already yielded. | Fixed. `frames()` copies each new image once, keeps that copy as `prev` and yields it. `test_frames_from_one_reused_buffer_are_new_and_stay_unchanged` (a stub that writes every frame into one array) failed before with `RuntimeError: no more frames` (every later frame skipped) and passes now. |
+| 2 | p6 `kind()` ignored the turn, so a right cell with a wrong turn counted as correct. | Fixed. New required `--turn` (0 to 3): the turn the camera should see, as `Read.turn`. `kind(decision, row, col, turn)` calls a Read correct only when row, column and turn all match, so a wrong turn is a wrong read: frame saved to `results/findings/`, probe stops (rule 5). The piece label in the CSV, the prompt and the FINDING line carry the turn. Tests: `test_kind_checks_row_column_and_turn`, `test_p6_needs_the_true_turn`. |
+| 3 | p5 `FrameLog`'s thread died silently on an exception. | Fixed. `_run` stores the exception and `join()` raises `RuntimeError("the frame thread failed after N frames: ...")` from it, so `main` stops before any report. `test_frame_log_join_raises_when_its_thread_failed` (before: `DID NOT RAISE`). |
+| 4 | An old `motion_media.md` could outlive a run that measured nothing. | Fixed. A `--move` run deletes `results/probes/motion_media.md` before it connects. `test_p5_move_run_removes_an_old_report_before_it_connects`. |
+| 5 | No try/finally around `robot.close()` in p5. | Fixed. The three phases and the operator question run inside try/finally with `robot.close()`, which stops playback and recording; the tone thread is now a daemon. `test_p5_closes_the_robot_when_a_phase_fails`. |
+| 6 | The UNVERIFIED marks in p4, p5 and p6 named no source. | Fixed. Each names the SDK file and line it relies on (list above), checked in `.venv/Lib/site-packages/reachy_mini` 1.15.0. |
+| 7 | `MoveBusyError` partway through a gesture leaves the head off neutral without saying so. | Fixed by logging, one of the two fixes offered: the warning names the step and where the head was left, for example `nod stopped at step 2 of 3: robot busy with another move (...); head left at {'pitch': 10} degrees`. No retry: the move that holds the robot sets the next pose, and waiting to send a neutral move after it would add a hidden delay to `nod()` and `shake()`. `test_move_busy_partway_through_a_nod_logs_where_the_head_was_left` (busy at steps 1, 2 and 3). |
+| 8 | The live tone test passes whether or not sound came out. | Fixed by labelling. Its docstring now says HUMAN and that the asserts check timing only. A pass means `play()` blocked for one second; whether the tone was heard is what the listener writes down. |
+| 9 | Without `JIGSAW_LIVE=1` the live tests disappeared from collection. | Fixed. `collect_ignore_glob` is gone; the `robot` fixture calls `pytest.skip` with a reason. `uv run pytest tests/robot_live -o addopts="" -rs` gave `no tests ran` before and `4 skipped` now. The default `uv run pytest` still leaves the folder out through `addopts = "-q --ignore=tests/robot_live"` in pyproject's pytest section, which this workstream does not own. So, stated plainly: the live tests have not been run. |
+| 10 | The play timing tests depend on wall-clock time. | Fixed. `ReachyRobot(..., sleep=time.sleep)` is injectable, and `play()` and `is_playing()` use the injected `clock` (default `time.monotonic`, as before). Both tests use a fake clock and sleep: 0.5 s slept for 0.5 s of audio; `is_playing()` true at the start and 10 ms before the end, false at the end. |
+| 11 | `correct_k` rescales fy and cy only, with no measurement. | No code change, as the review says. S1 and S2 must not rely on the corrected K (`Frame.K` at 720 rows) for any reported number until a probe measures it (item 6 under "Still needs the robot"). |
+| 12 | `uv.lock` is outside the edit list; `connect()` does not move to neutral. | `git diff main...HEAD -- uv.lock` is one line, the `reachy-mini` specifier `==1.15.0` that follows the pinned `robot` extra, and nothing else. The neutral move: `S3_robot_io.md:159` says `connect()` moves to `goto_target(head=create_head_pose(), duration=1.0)`; the code does not, and the earlier commits do not say why. Recorded here as a deviation and kept: `p3_live_read.py` and `p6_focus.py` call `connect()` and have no `--move` gate, so a neutral move inside `connect()` would move the head in probes that only watch. Open question 5. |
+
+Commands, from the worktree with `SSL_CERT_FILE` unset and `JIGSAW_LIVE` unset:
+
+```
+$ uv run pytest tests/test_robot_reachy.py          # new tests, before the fix
+6 failed, 31 passed in 35.56s
+$ uv run pytest tests/test_robot_reachy.py
+37 passed in 34.99s
+$ uv run pytest tests/test_robot_probes.py          # new tests, before the fix
+5 failed, 21 passed, 1 warning in 20.81s
+$ uv run pytest tests/test_robot_probes.py
+26 passed in 19.22s
+$ uv run pytest tests/robot_live -o addopts="" -rs  # before the change: no tests ran in 9.68s
+4 skipped in 16.51s
+$ uv run ruff check jigsaw/robot scripts/probes tests/test_robot_reachy.py tests/test_robot_probes.py tests/robot_live
+All checks passed!
+$ uv run pytest
+110 passed in 449.67s (0:07:29)
+```
+
+The runs were much slower than the earlier ones on this laptop (86 s for the full suite before). I did not look into why.

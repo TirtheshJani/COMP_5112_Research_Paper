@@ -32,7 +32,9 @@ def test_nod_then_shake_each_under_1_5_s(robot):
 
 
 def test_one_second_1_khz_tone(robot):
-    rate = 22050                               # exercises the resampler, like Piper output
+    """HUMAN: a person listens for one second of 1 kHz. The asserts check timing only: play() sleeps for the
+    duration whether or not any sound came out, so a pass does not show that the tone played."""
+    rate = 22050                              # exercises the resampler, like Piper output
     t = np.arange(rate) / rate
     tone = (0.3 * np.sin(2 * np.pi * 1000 * t)).astype(np.float32)
     t0 = time.monotonic()

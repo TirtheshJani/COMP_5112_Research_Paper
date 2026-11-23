@@ -27,8 +27,12 @@ Settling time.
   gestures of the motion phase, or "none" if any of them did not settle within SETTLE_WAIT_S.
 
 Writes results/probes/motion_media.md, which ends with the single line "settling_time_s: <value>"
-(S6 copies it into app.py), and tees the console to results/probes/p5.txt.
-UNVERIFIED on the robot until this probe has run.
+(S6 copies it into app.py), and tees the console to results/probes/p5.txt. A --move run first deletes the
+motion_media.md of an earlier run, so a run that fails leaves no old value behind.
+UNVERIFIED: the timing assumes what reachy-mini 1.15.0 says and no probe has shown on the robot:
+goto_target blocks until the move ends (reachy_mini.py:724), push_audio_sample returns at once
+(media/media_manager.py:340, media/audio_base.py:130-161), get_frame returns the latest frame
+(media/webrtc_client_gstreamer.py:346). Remove this mark once p5.txt and motion_media.md are saved.
 """
 import argparse
 import threading
@@ -103,19 +107,26 @@ class FrameLog:
         self.times: list[float] = []
         self.diffs: list[float] = []          # diffs[k] is between frames k and k + 1
         self.shape = None
+        self.error: Exception | None = None
         self._thread = threading.Thread(target=self._run, args=(robot,), daemon=True)
         self._thread.start()
 
     def _run(self, robot: ReachyRobot) -> None:
         prev = None
-        for f in robot.frames():
-            if prev is not None:
-                self.diffs.append(frame_diff(prev, f.image))
-            self.times.append(f.t)
-            self.shape, prev = f.image.shape, f.image
+        try:
+            for f in robot.frames():
+                if prev is not None:
+                    self.diffs.append(frame_diff(prev, f.image))
+                self.times.append(f.t)
+                self.shape, prev = f.image.shape, f.image
+        except Exception as e:  # kept for join(), so that a dead thread is not read as a short measurement
+            self.error = e
 
     def join(self) -> None:
+        """Wait for the thread; raise if it failed."""
         self._thread.join(timeout=5)
+        if self.error is not None:
+            raise RuntimeError(f"the frame thread failed after {len(self.times)} frames: {self.error!r}") from self.error
 
 
 def gesture(robot: ReachyRobot, name: str) -> tuple[str, float, float]:
@@ -134,40 +145,43 @@ def main() -> None:
         return
     from _tee import tee
     tee("p5")
+    (OUT / "motion_media.md").unlink(missing_ok=True)
     robot = connect(a.host)
-    log = FrameLog(robot)
-    print(f"phase 1: {STILL_S:g} s still and silent")
-    t0 = time.monotonic()
-    time.sleep(STILL_S)
-    t_still = (t0, time.monotonic())
+    try:
+        log = FrameLog(robot)
+        print(f"phase 1: {STILL_S:g} s still and silent")
+        t0 = time.monotonic()
+        time.sleep(STILL_S)
+        t_still = (t0, time.monotonic())
 
-    print("phase 2: nod, shake, nod, shake")
-    motion = []
-    for name in ("nod", "shake", "nod", "shake"):
-        motion.append(gesture(robot, name))
-        time.sleep(SETTLE_WAIT_S)
+        print("phase 2: nod, shake, nod, shake")
+        motion = []
+        for name in ("nod", "shake", "nod", "shake"):
+            motion.append(gesture(robot, name))
+            time.sleep(SETTLE_WAIT_S)
 
-    print(f"phase 3: {TONE_S:g} s tone with a nod and a shake")
-    play_errors: list[str] = []
+        print(f"phase 3: {TONE_S:g} s tone with a nod and a shake")
+        play_errors: list[str] = []
 
-    def play() -> None:
-        try:
-            t = np.arange(int(TONE_S * 16000)) / 16000
-            robot.play((0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32), 16000)
-        except Exception as e:  # noqa: BLE001 (a probe reports every failure)
-            play_errors.append(repr(e))
+        def play() -> None:
+            try:
+                t = np.arange(int(TONE_S * 16000)) / 16000
+                robot.play((0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32), 16000)
+            except Exception as e:  # noqa: BLE001 (a probe reports every failure)
+                play_errors.append(repr(e))
 
-    player = threading.Thread(target=play)
-    player.start()
-    time.sleep(1.0)
-    with_tone = []
-    for name in ("nod", "shake"):
-        n, t0, t1 = gesture(robot, name)
-        with_tone.append((f"{n} + tone", t0, t1))
+        player = threading.Thread(target=play, daemon=True)
+        player.start()
         time.sleep(1.0)
-    player.join()
-    heard = input("Did the tone have a gap, a click or a pitch change while the head moved? [y/n] ").strip().lower()
-    robot.close()
+        with_tone = []
+        for name in ("nod", "shake"):
+            n, t0, t1 = gesture(robot, name)
+            with_tone.append((f"{n} + tone", t0, t1))
+            time.sleep(1.0)
+        player.join()
+        heard = input("Did the tone have a gap, a click or a pitch change while the head moved? [y/n] ").strip().lower()
+    finally:
+        robot.close()                                    # also on an error or Ctrl-C: stops playback and recording
     log.join()
 
     times, diffs = log.times, log.diffs

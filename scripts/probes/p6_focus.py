@@ -1,7 +1,7 @@
 """Probe 6 (P1 Task 6): focus check. At which distance and resolution does the reader read a printed piece?
 
-    python scripts/probes/p6_focus.py --piece 4 2 [--host reachy-mini.local] [--resolution 1280x720]
-    python scripts/probes/p6_focus.py --piece 4 2 --resolution 1920x1080
+    python scripts/probes/p6_focus.py --piece 4 2 --turn 0 [--host reachy-mini.local] [--resolution 1280x720]
+    python scripts/probes/p6_focus.py --piece 4 2 --turn 0 --resolution 1920x1080
 
 One resolution per run. reachy-mini 1.15.0 cannot switch the camera resolution while it streams: the remote
 (WebRTC) client's set_resolution raises "Cannot change resolution while the camera is streaming"
@@ -11,11 +11,12 @@ stream in this run; the script checks the first frame against it and stops, writ
 differ. How to make the robot stream 1920 x 1080 is still open (UNVERIFIED).
 
 For each distance (15, 20, 30 and 40 cm, camera to card) the operator places piece --piece (row and column
-as printed, one-based) grid side up over the green card at that distance and presses Enter. The script then
-logs FRAMES new frames, each with the PieceReader decision and the pixels per cell from GridRead.H
-(px_per_cell: mean image length of one cell's two sides at the centre of the read grid). A Read with the
-wrong row or column is a finding (CLAUDE.md rule 5): the frame is saved to results/findings/ and the script
-stops.
+as printed, one-based) grid side up over the green card at that distance, turned so that the camera sees it
+at --turn (counter-clockwise quarter turns from upright in the camera image, as Read.turn), and presses
+Enter. The script then logs FRAMES new frames, each with the PieceReader decision and the pixels per cell
+from GridRead.H (px_per_cell: mean image length of one cell's two sides at the centre of the read grid). A
+Read with the wrong row, column or turn is a finding (CLAUDE.md rule 5): the frame is saved to
+results/findings/ and the script stops. If only the turn differs, check how the piece was placed first.
 
 Writes results/probes/focus_<resolution>.csv (one row per frame of this run) and rebuilds
 results/probes/focus_check.md from every focus_*.csv present: a table per (resolution, distance) and the
@@ -25,7 +26,9 @@ Recommendation rule (recommend): a (resolution, distance) qualifies when at leas
 are correct reads and none is wrong. Among those, the highest read rate wins; a tie goes to the larger
 distance (more room for the hand), then to 1280x720 (the default mode, and the only one whose K the adapter
 corrects).
-UNVERIFIED on the robot until this probe has run.
+UNVERIFIED: the frames come from get_frame over the WebRTC client of reachy-mini 1.15.0
+(media/webrtc_client_gstreamer.py:346) at the size the robot streams (:160-166 above); no probe has run this
+on the robot. Remove this mark once p6_<resolution>.txt and focus_check.md are saved.
 """
 import argparse
 import csv
@@ -62,11 +65,11 @@ def px_per_cell(H: np.ndarray, shape: tuple[int, ...]) -> float:
     return float((np.linalg.norm(p[1] - p[0]) + np.linalg.norm(p[2] - p[0])) / 2)
 
 
-def kind(decision: Decision, row: int, col: int) -> str:
-    """"correct", "wrong" or "rejected" against the true piece (zero-based row and column; turn not checked)."""
+def kind(decision: Decision, row: int, col: int, turn: int) -> str:
+    """"correct", "wrong" or "rejected" against the true piece (zero-based row and column) and its true turn."""
     if not isinstance(decision, Read):
         return "rejected"
-    return "correct" if (decision.row, decision.col) == (row, col) else "wrong"
+    return "correct" if (decision.row, decision.col, decision.turn) == (row, col, turn) else "wrong"
 
 
 def label(d: Decision) -> str:
@@ -139,18 +142,20 @@ def read_rows(paths: Iterable[Path]) -> list[dict]:
     return rows
 
 
-def measure(it: Iterator[Frame], reader: PieceReader, resolution: str, row: int, col: int, rows: list[dict]) -> int:
+def measure(it: Iterator[Frame], reader: PieceReader, resolution: str, row: int, col: int, turn: int,
+            rows: list[dict]) -> int:
     """Prompt for each distance and append one row per frame. 0 when done, 3 after a wrong read."""
-    piece = f"R{row + 1} C{col + 1}"
+    piece = f"R{row + 1} C{col + 1} turn {turn}"
     for dist in DISTANCES_CM:
-        input(f"\nPlace piece {piece} grid side up over the green card, {dist} cm from the camera; press Enter. ")
+        input(f"\nPlace piece {piece} grid side up over the green card, {dist} cm from the camera, so that the "
+              f"camera sees it at turn {turn}; press Enter. ")
         next(it)                                         # may show the scene from before the prompt
         for i in range(1, FRAMES + 1):
             image = next(it).image
             d = reader.read(image)
             grid = reader.last_grid
             px = None if grid is None else round(px_per_cell(grid.H, grid.cells.shape), 3)
-            k = kind(d, row, col)
+            k = kind(d, row, col, turn)
             rows.append({"resolution": resolution, "distance_cm": dist, "frame": i, "piece": piece, "kind": k,
                          "decision": label(d), "px_per_cell": px})
             print(f"{dist:3d} cm  frame {i:2d}  {k:8s}  {label(d):22s}  px per cell {px}")
@@ -167,6 +172,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--piece", nargs=2, type=int, required=True, metavar=("ROW", "COL"),
                     help="the printed piece, row and column one-based as on its front")
+    ap.add_argument("--turn", type=int, choices=(0, 1, 2, 3), required=True,
+                    help="the turn the camera sees: counter-clockwise quarter turns from upright, as Read.turn")
     ap.add_argument("--resolution", choices=RESOLUTIONS, default=DEFAULT_RESOLUTION,
                     help="what the camera streams in this run (one per run; the SDK cannot switch it)")
     ap.add_argument("--host", default=None, help="robot address (default: reachy-mini.local)")
@@ -186,7 +193,7 @@ def main() -> None:
             print(f"The camera streams {shape[1]}x{shape[0]}, not {a.resolution}; the SDK cannot switch the "
                   "resolution while streaming (see --help). Stopping; nothing written.")
             sys.exit(2)
-        status = measure(it, reader, a.resolution, a.piece[0] - 1, a.piece[1] - 1, rows)
+        status = measure(it, reader, a.resolution, a.piece[0] - 1, a.piece[1] - 1, a.turn, rows)
     finally:
         robot.close()
     write_rows(OUT / f"focus_{a.resolution}.csv", rows)
