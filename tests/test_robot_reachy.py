@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from jigsaw.robot import reachy
-from jigsaw.robot.reachy import ReachyRobot, connect
+from jigsaw.robot.reachy import ReachyRobot, connect, correct_k
 from jigsaw.types import AudioIn, AudioOut, Frame, FrameSource, Gestures
 
 
@@ -172,6 +172,47 @@ def test_frames_have_none_intrinsics_when_the_camera_cannot_give_them():
     media.camera = NoIntrinsics()
     f = next(ReachyRobot(StubMini(media), pose).frames())
     assert f.K is None and f.D is None
+
+
+# Camera intrinsics: the 720p correction (arithmetic only; no probe has measured it)
+
+K_SDK_720 = np.array([[667.26921422, 0.0, 635.29201994],      # K the SDK gave at 1280 x 720, results/probes/p2.txt
+                      [0.0, 556.41052461, 368.97888105],
+                      [0.0, 0.0, 1.0]])
+
+
+def test_correct_k_at_720_rows_scales_fy_and_moves_cy_only():
+    K = correct_k(K_SDK_720, 720)
+    assert K[1, 1] == pytest.approx(667.692629532, abs=1e-6)        # 1.2 * 556.41052461
+    assert K[1, 2] == pytest.approx(370.774657260, abs=1e-6)        # (3.6 * 368.97888105 - 216) / 3
+    assert K[0, 0] == K_SDK_720[0, 0] and K[0, 2] == K_SDK_720[0, 2]
+    assert K[0, 1] == 0 and K[1, 0] == 0 and list(K[2]) == [0, 0, 1]
+    assert K_SDK_720[1, 1] == 556.41052461                          # the input is not modified
+
+
+def test_correct_k_keeps_a_centred_principal_point_centred():
+    K = correct_k(np.array([[600.0, 0, 640], [0, 500, 360], [0, 0, 1]]), 720)
+    assert np.allclose(K, [[600, 0, 640], [0, 600, 360], [0, 0, 1]])
+
+
+@pytest.mark.parametrize("height", [1080, 2592, 4])
+def test_correct_k_leaves_other_heights_untouched(height):
+    assert np.array_equal(correct_k(K_SDK_720, height), K_SDK_720)
+
+
+def test_frames_carry_the_corrected_k_at_720_rows():
+    media = StubMedia(frames=[np.zeros((720, 1280, 3), np.uint8)])
+    media.camera.K = K_SDK_720
+    f = next(ReachyRobot(StubMini(media), pose).frames())
+    assert np.array_equal(f.K, correct_k(K_SDK_720, 720))
+
+
+def test_frames_at_other_heights_keep_the_sdk_k_and_log_that_once(caplog):
+    media = StubMedia(frames=[img(1), img(2), img(3)])
+    with caplog.at_level(logging.WARNING, logger="jigsaw.robot.reachy"):
+        frames = list(itertools.islice(ReachyRobot(StubMini(media), pose).frames(), 3))
+    assert all(np.array_equal(f.K, StubCamera.K) for f in frames)
+    assert sum("uncorrected" in r.getMessage() for r in caplog.records) == 1
 
 
 def test_close_stops_frames_and_releases_the_robot_once():

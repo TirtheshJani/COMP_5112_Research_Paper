@@ -53,6 +53,20 @@ def resample(pcm: np.ndarray, rate: int, out_rate: int) -> np.ndarray:
     return np.interp(t, np.arange(len(x)), x).astype(np.float32)
 
 
+# UNVERIFIED: the 720p K correction is an orchestrator instruction (docs/jigsaw/handoff/DECISIONS.md entry 7 on
+# main); no probe has measured it. A reading of where it comes from, also unverified: the SDK scales K by the
+# 2592-row sensor height (media/camera_base.py:137-147), while 720p is a centred 3840 x 2160 crop scaled down 3x
+# (2592 / 720 = 3.6, (2592 - 2160) / 2 = 216, 2592 / 2160 = 1.2).
+def correct_k(K: np.ndarray, height: int) -> np.ndarray:
+    """K for frames `height` rows high: at 720 rows fy = 1.2 * fy and cy = (3.6 * cy - 216) / 3, fx and cx as
+    given; any other height returns K unchanged. Returns a new array."""
+    K = np.array(K, dtype=float)
+    if height == 720:
+        K[1, 1] = 1.2 * K[1, 1]
+        K[1, 2] = (3.6 * K[1, 2] - 216) / 3
+    return K
+
+
 def _is_move_busy(e: BaseException) -> bool:
     return any(c.__name__ == "MoveBusyError" for c in type(e).__mro__)
 
@@ -75,6 +89,7 @@ class ReachyRobot:
         media.start_recording()
         self._closed = False
         self._play_until = 0.0
+        self._k_note_logged = False
 
     # FrameSource
 
@@ -88,6 +103,14 @@ class ReachyRobot:
                 v = None
             out.append(None if v is None else np.asarray(v, dtype=float))
         return out[0], out[1]
+
+    def _k_for(self, K: np.ndarray | None, height: int) -> np.ndarray | None:
+        if K is None:
+            return None
+        if height != 720 and not self._k_note_logged:
+            log.warning("camera K is uncorrected for %d-row frames: the correction is known only for 720 rows", height)
+            self._k_note_logged = True
+        return correct_k(K, height)
 
     def frames(self) -> Iterator[Frame]:
         """New camera frames only: None and a frame byte-identical to the previous one are skipped.
@@ -113,7 +136,7 @@ class ReachyRobot:
                 continue
             prev, last_new, last_warn = image, now, now
             # UNVERIFIED: BGR channel order (media/webrtc_client_gstreamer.py:170); needs the red-object check in p2.
-            yield Frame(image, now, K, D)
+            yield Frame(image, now, self._k_for(K, image.shape[0]), D)
 
     def _wait_for_frame(self, timeout: float) -> bool:
         t0 = time.monotonic()
