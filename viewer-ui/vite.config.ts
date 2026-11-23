@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -7,6 +8,7 @@ const api = "http://127.0.0.1:8765";
 
 export default defineConfig({
   plugins: [react()],
+  test: { include: ["src/**/*.test.ts"] },
   build: { outDir: "../jigsaw/viewer/static", emptyOutDir: true },
   server: {
     proxy: { "/events": api, "/frame.jpg": api, "/picture.png": api, "/reset": api },

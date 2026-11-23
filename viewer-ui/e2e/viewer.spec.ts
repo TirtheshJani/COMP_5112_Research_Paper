@@ -116,3 +116,24 @@ test("W9: shows disconnected when the server stops and recovers when it restarts
   const t = await page.locator(".camera img").getAttribute("src");
   await expect(page.locator(".camera img")).not.toHaveAttribute("src", t!, { timeout: 5_000 });
 });
+
+test("W8: the 3D panel shows the piece only while it has a pose, at 30 frames per second or more", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto(replay.url);
+  const scene = page.getByTestId("scene");
+  await expect(scene.locator("canvas")).toHaveCount(1);
+  await expect(scene).toHaveAttribute("data-piece-visible", "true", { timeout: 15_000 });
+  await expect(scene).toHaveAttribute("data-piece-visible", "false", { timeout: 15_000 });
+  const fps = await page.evaluate(
+    () =>
+      new Promise<number>((ok) => {
+        let n = 0;
+        const t0 = performance.now();
+        const tick = () => (++n, performance.now() - t0 < 2000 ? requestAnimationFrame(tick) : ok(n / 2));
+        requestAnimationFrame(tick);
+      }),
+  );
+  expect(fps).toBeGreaterThanOrEqual(30);
+  expect(errors).toEqual([]);
+});

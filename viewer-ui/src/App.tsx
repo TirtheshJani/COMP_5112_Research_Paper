@@ -1,5 +1,6 @@
 import { BoardPanel } from "./BoardPanel";
 import { CameraPanel } from "./CameraPanel";
+import { ScenePanel } from "./ScenePanel";
 import { StatusLine } from "./StatusLine";
 import { useViewer } from "./useViewer";
 
@@ -10,6 +11,7 @@ export function App() {
       <StatusLine status={state.status} />
       <main>
         <CameraPanel frame={state.frame} />
+        <ScenePanel frame={state.frame} headPose={state.headPose} />
         <BoardPanel placed={state.placed} highlight={state.highlight} />
       </main>
       <footer>
