@@ -102,3 +102,16 @@ def test_serve_port_taken_warns_and_returns_none(bus, caplog):
         with caplog.at_level(logging.WARNING):
             assert serve(bus, port=port) is None
     assert "viewer" in caplog.text.lower()
+
+
+def test_committed_build_is_served_with_its_assets(bus):
+    """W10: the demo needs only Python; the committed build references only files that exist."""
+    import re
+
+    c = create_app(bus).test_client()
+    page = c.get("/")
+    assert page.status_code == 200
+    assets = re.findall(r'(?:src|href)="(/assets/[^"]+)"', page.get_data(as_text=True))
+    assert any(a.endswith(".js") for a in assets) and any(a.endswith(".css") for a in assets)
+    for a in assets:
+        assert c.get(a).status_code == 200, a
