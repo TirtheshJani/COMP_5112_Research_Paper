@@ -62,6 +62,14 @@ export function reduce(state: ViewerState, event: ViewerEvent, now: number): Vie
   }
 }
 
+// A reset is page-local, never sent by the server: on every (re)connect the server replays its
+// current board, so the page starts clean and a restarted server cannot leave a stale board behind.
+export type ViewerAction = ViewerEvent | { type: "reset" };
+
+export function reduceAction(state: ViewerState, action: ViewerAction, now: number): ViewerState {
+  return action.type === "reset" ? initialState : reduce(state, action, now);
+}
+
 export function describeDecision(d: Decision): string {
   return d.kind === "read"
     ? `Row ${d.row + 1}, column ${d.col + 1}, turn ${d.turn}`
