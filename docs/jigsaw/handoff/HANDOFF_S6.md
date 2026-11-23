@@ -14,11 +14,11 @@ Branch `feat/s6-app` in `.worktrees/s6-app`, made from main with S0, S1, S3, S4,
 
 ### Stable (A1)
 
-A presentation is the time a piece is in view; a `no_grid` reject ends it. `update` returns `"announce"` when the same `Read` (row, col and turn) has arrived `need` times in a row and its piece differs from `last`; the same piece at another turn is not announced again (`next` makes a new `Stable`). It returns `"give_up"` once per presentation after `miss_limit` frames without an answer; every frame that is neither `no_grid` nor the one completing a stable read counts as a miss. After an answer, or after the announced piece is read stably again, the presentation gives up no more. `no_grid` frames alone never give up, so an empty mat never makes the robot shake.
+A presentation is the time a piece is in view; a `no_grid` reject ends it and clears `last`, so the same piece shown again later is announced again (changed by review finding 5). `update` returns `"announce"` when the same `Read` (row, col and turn) has arrived `need` times in a row and its piece differs from `last`; the same piece at another turn is not announced again within a presentation (`next` makes a new `Stable`). It returns `"give_up"` once per presentation after `miss_limit` frames without an answer; every frame that is neither `no_grid` nor the one completing a stable read counts as a miss. After an answer, or after the announced piece is read stably again, the presentation gives up no more; a stable read after a give-up is still announced (review finding 4). `no_grid` frames alone never give up, so an empty mat never makes the robot shake.
 
 ### App loop (A2 to A6)
 
-- Order: on `announce`, publish `announce` then `board`, speak, nod. On `give_up`, publish `give_up`, speak `phrase_reject` of the reject reason at that frame (the default sentence if that frame was a Read), shake.
+- Order: on `announce`, publish `announce` then `board`, speak, nod. On `give_up`, publish `give_up`, speak `phrase_reject` of the last reject reason of the presentation (the default sentence if there was none since the last `no_grid`; review finding 12), shake.
 - A4: a frame is dropped, not read, while `audio_out.is_playing()` or when its `Frame.t` is earlier than the end of the last speech and gesture plus `SETTLE_S`. Speech and gestures block, so frames that arrive during them carry earlier stamps.
 - A5: events are CONTRACTS v2 section 5. `grid` is the four image corners of cell corners (0, 0), (w, 0), (w, h), (0, h) mapped through `GridRead.H`; it is set whenever `read_grid` found a grid, also for `no_match` and similar rejects. `rvec`, `tvec` come from `pose.piece_pose` and are null without `K`. The JPEG goes to `bus.set_frame` before each frame event. A `board` event with `placed: []` is published at start. `head` events are not published: the `Gestures` interface has no pose.
 - A6: `again` speaks the last announcement again without a gesture; `next` makes a new `Stable` (the board keeps its pieces); `stop` ends the loop; `ask` answers from the next frame that is read: announce if it decodes, else the rejection sentence and a shake.
@@ -27,7 +27,7 @@ A presentation is the time a piece is in view; a `no_grid` reject ends it. `upda
 ### Physical test (A8 to A12)
 
 - Capture (`protocol.capture`, `run_physical.py`): 35 pieces in front order x angles 0 to 315 in steps of 45 x 5 frames, one voice prompt per presentation ("Piece row 2, column 3, angle 90."), a beep after each saved set. It never decodes; the test `test_the_protocol_never_decodes` parses the imports and allows only `jigsaw.vision.paper_mask` (plus `jigsaw.types`).
-- Presence rule, my addition to "paper_mask finds it for 5 frames in a row": after each prompt the view must first change (an empty mat, or a piece overlapping the last saved mask by IoU below `STILL_IOU`), then the piece must be found in 5 frames in a row with every mask overlapping the run's first by at least `STILL_IOU`. Without the change rule the piece from the previous presentation would be saved before the operator turns or swaps it; without the stillness rule a piece being turned would be saved mid-turn. At the start of a run only an empty mat counts as a change.
+- Presence rule, my addition to "paper_mask finds it for 5 frames in a row": after each prompt the view must first change (an empty mat, or a piece overlapping the last saved mask by IoU below `STILL_IOU`), then the piece must be found in 5 frames in a row with every mask overlapping the run's first by at least `STILL_IOU`. Without the change rule the piece from the previous presentation would be saved before the operator turns or swaps it; without the stillness rule a piece being turned would be saved mid-turn. At the start of a run only an empty mat counts as a change. Since review findings 2 and 3 the 5 saved frames must also show the piece overlapping the run's first mask by `STILL_IOU` (10 still frames in a row); if it moves or leaves, nothing is written and the capture waits for a still piece again.
 - Nominal angle: counter-clockwise as the camera sees the grid, so angle 90 is turn 1. Operator wording (piece held up, grid to the robot, picture upright facing the operator at angle 0, turned clockwise as the operator sees the picture) follows the S6 v2 box and is unverified.
 - Layout: `results/frames/r{row}_c{col}_a{angle:03d}/f{n}.png` and `f{n}.json` (piece, angle, frame index, `Frame.t`, wall time, resolution, K, D). A set is written to a `.partial` folder and renamed when complete. A run skips complete sets and deletes leftover `.partial` folders, so resuming overwrites nothing.
 - Decode (`decode_physical.py`): one row per frame in the CONTRACTS section 6 columns, decoder `reader.PieceReader` (decode_grid). `kind` against the label: at multiples of 90 only that turn is correct, at odd multiples of 45 either adjacent turn. `px_per_cell` as in `p6_focus.py`; `windows` counts complete 5 x 5 windows in the mask. Refuses a dirty tree unless `--allow-dirty`; `commit` is `git rev-parse --short HEAD`. `--undistort` uses the K and D saved with each frame; the summary says whether it was on.
@@ -92,12 +92,12 @@ $ uv run pytest tests/test_protocol.py -k "run_physical or never"
 
 236 = 204 after Task 1 (191 from main plus 13 in `test_stable.py`) + 19 in `test_app.py` + 13 in `test_protocol.py`.
 
-The synthetic capture in `tests/test_protocol.py` (35 pieces x angles 0 and 45 x 5 frames, rendered at 12 px per cell) has three deliberate operator errors: presentation r0_c0_a045 shows piece row 7 column 5, r1_c1_a000 shows the right piece upside down, and frame 3 of r2_c2_a000 shows another piece. Its summary reports 339 correct, 0 rejected and 11 wrong of 350 frames; the 11 wrong frames are exactly those, and the label check flags r0_c0_a045 ("piece", row 7 column 5, 5 of 5) and r1_c1_a000 ("angle", turn 2, 5 of 5). `test_every_wrong_frame_is_a_deliberate_mislabel` fails on any other wrong frame.
+The synthetic capture in `tests/test_protocol.py` (35 pieces x angles 0 and 45 x 5 frames, rendered at 12 px per cell) has three deliberate operator errors: presentation r0_c0_a045 shows piece row 7 column 5, r1_c1_a000 shows the right piece upside down, and frame 3 of r2_c2_a000 shows another piece (since review finding 2 that PNG is written over after the capture, because the capture no longer saves a frame in which the piece changed). Its summary reports 339 correct, 0 rejected and 11 wrong of 350 frames; the 11 wrong frames are exactly those, and the label check flags r0_c0_a045 ("piece", row 7 column 5, 5 of 5) and r1_c1_a000 ("angle", turn 2, 5 of 5). `test_every_wrong_frame_is_a_deliberate_mislabel` fails on any other wrong frame.
 
 ## UNVERIFIED marks
 
 - `jigsaw/app.py:27`: `SETTLE_S = 0.5`, placeholder until `scripts/probes/p5_motion_media.py` writes `settling_time_s` to `results/probes/motion_media.md` (DECISIONS.md entry 8).
-- `jigsaw/protocol.py:33`: `STILL_IOU = 0.9`, not measured with the robot's camera.
+- `jigsaw/protocol.py:35`: `STILL_IOU = 0.9`, not measured with the robot's camera.
 - `scripts/run_physical.py:19`: the operator's turn direction in the printed instructions.
 
 ## Deviations and decisions
@@ -120,11 +120,11 @@ The synthetic capture in `tests/test_protocol.py` (35 pieces x angles 0 and 45 x
 ## Open questions
 
 1. Is the physical rig a piece held up in front of the green card (what the instructions assume), or a piece lying on the card under the camera? In the second case the angle direction must be worked out again; the label check would show it as "angle" flags on every 90 and 270 presentation of the dry run.
-2. Should a give-up use the most frequent reject reason of the presentation instead of the reason at the last frame?
+2. Should a give-up use the most frequent reject reason of the presentation instead of the reason at the last frame? (Settled by review finding 12: the last reject reason of the presentation.)
 
 ## Review
 
-This session could not start subagents, so the `reviewer` subagent has not reviewed this branch. Run it before merging.
+The reviewer reviewed the branch at a04d7fb. Its 13 findings and what was done with each are in "Review findings" at the end of this note.
 
 ## HUMAN steps left
 
@@ -139,7 +139,7 @@ Robot address as in HANDOFF_S3: `10.0.0.100`. Each step from the worktree with `
 3. Five-piece dry run of the capture and the decode:
    `uv run python scripts/run_physical.py --host 10.0.0.100 --out results/frames_dry --pieces 1,1 2,3 4,5 6,2 7,4`
    `uv run python scripts/decode_physical.py --frames results/frames_dry --out results/physical_dry.csv --summary results/physical_dry_summary.md --findings results/findings/dry --allow-dirty`
-   Check: no capture fired before you had turned or swapped the piece, and none hung with the piece held still (`STILL_IOU`, `protocol.py:33`); `results/physical_dry_summary.md` has no "angle" flags (confirms the angle direction, `run_physical.py:19`); the frames are sharp. Remove the UNVERIFIED marks that this confirms.
+   Check: no capture fired before you had turned or swapped the piece, and none hung with the piece held still (`STILL_IOU`, `protocol.py:35`); `results/physical_dry_summary.md` has no "angle" flags (confirms the angle direction, `run_physical.py:19`); the frames are sharp. Remove the UNVERIFIED marks that this confirms.
 4. The real capture, all 35 pieces, about 45 minutes; run the same command again after any interruption:
    `uv run python scripts/run_physical.py --host 10.0.0.100`
 5. Decode, after S2 has merged (for `results/sim_puzzle.csv` and `stats.wilson`) and with a clean tree:
@@ -147,3 +147,66 @@ Robot address as in HANDOFF_S3: `10.0.0.100`. Each step from the worktree with `
    It writes `results/physical.csv`, `results/physical_summary.md` and, for any wrong frame, `results/findings/`; exit code 2 means at least one wrong frame: read the label check before anything else (rule 5). Once S2 is merged, replace `decode_physical.wilson` with `jigsaw.experiment.stats.wilson` and rerun `uv run pytest tests/test_protocol.py`.
 6. The 60 s backup clip: start the demo with the projector view, record 60 s of a person presenting pieces with the robot answering (phone or screen recorder):
    `uv run python scripts/run_demo.py --source robot --host 10.0.0.100 --viewer`
+
+## Review findings
+
+Reviewer findings on a04d7fb. I fixed them test first in four commits: 2dc2770 (Stable), ceaecc7 (app and A3 gate), e109cbf (capture) and b11ca9f (decode). This note is a separate commit.
+
+| # | Finding | What I did |
+|---|---|---|
+| 1 (major) | `ask` announces from one frame that has not passed Stable | **Rejected, no change.** Spec A6 asks for exactly this: "`ask` forces an immediate answer from the current frame if it decodes, else the rejection sentence". See open question 3. |
+| 2 (major) | The 5 frames after the still run are saved without checks | **Fixed.** `protocol.still_set` keeps the `SET_FRAMES` frames only if `paper_mask` finds the piece in each one and its IoU with the still run's first mask is at least `STILL_IOU`. Otherwise nothing is written and the capture waits for a still piece again, with no new prompt. The decision uses `paper_mask` only, never a decode (A9). Test: `test_a_set_is_saved_only_while_the_piece_stays_still` covers a piece taken away and a piece that jumps. Because the capture now refuses to save the fixture's swapped frame (r2_c2_a000/f3), that PNG is written over after the capture. |
+| 3 (major) | Stillness is measured against the run's first frame, and 0.9 is loose for a slow turn | **Fixed in a different way.** The saved frames now count toward stillness, so 10 frames in a row must overlap the run's first mask. I did not add a frame-to-frame bound: during a steady turn the change from the first frame grows with every frame, so such a bound would catch nothing extra unless set near 0.99 per frame. That would be a second unmeasured threshold, and a hand's jitter would trip it. IoU measured on rendered piece (3, 3) at 12 px per cell, by turn away from the first frame: 0.970 at 1 degree, 0.941 at 2, 0.913 at 3, 0.886 at 4 and 0.862 at 5. So `STILL_IOU = 0.9` is about 3.5 degrees. The fastest steady turn that can still be saved mid-turn fell from about 0.9 to about 0.4 degrees per frame. Test: `test_a_slow_turn_is_not_saved_mid_turn` uses 0.6 degrees per frame; the old capture saved frames whose IoU with the final pose was 0.61. `STILL_IOU` remains UNVERIFIED (`protocol.py:35`) because nobody has measured it with the robot's camera. The dry run checks it. |
+| 4 (minor) | An announcement can follow a give-up | **Kept and documented** in `stable.py`, and pinned by `test_a_stable_read_after_a_give_up_is_announced`; a mutation that blocks the announcement fails this test. The announcement still needs 3 equal reads. The give-up asks to see the piece again, so a person who moves a finger instead of removing the piece still gets an answer. |
+| 5 (minor) | After `no_grid`, the same piece is never announced again | **Fixed.** `no_grid` now clears `last` as well. This matches S6 goal 2 ("exactly once per presentation of a piece") and the v1 plan test `test_same_piece_again_after_it_left_view`, which CONTRACTS section 3 keeps ("unchanged from v1"). `test_the_same_piece_after_an_empty_view_is_announced_again` replaces the test that pinned the old behaviour. Watch for this in the dry run: a single `no_grid` frame while a piece is held also ends the presentation, and the robot then repeats that piece after 3 more reads. |
+| 6 (minor) | The gate counts wrong reads only through `announced`, and the floor of 150 is unexplained | **Fixed.** For each presentation the gate now asserts one nod per announcement, one shake per give-up and at most one gesture in total. The floor of 150 stays, and the test explains why: it only stops a gate that announces nothing from passing, and it does not affect the wrong count (rule 5). Observed: 187 of 200 correct, Wilson 95 percent interval 0.892 to 0.962. The floor is 0.75. |
+| 7 (minor) | A presentation that ends in silence goes unnoticed | **Fixed in a different way.** Two of the 200 presentations end in silence. Both contain `no_grid` frames, which reset Stable by design (an empty view never gives up), so asserting "announced or gave up" would fail on correct code. The gate counts silent presentations separately and asserts that each one had a `no_grid` frame. Without one, Stable must answer within 15 of the 20 frames. |
+| 8 (minor) | CLAUDE.md rule 4 (`seed`, `commit` last) disagrees with CONTRACTS section 6 (`timestamp,commit`) | **No code change; TJ has to decide (open question 4).** `decode_physical.py` follows the frozen section 6 schema, and nothing in it is random. This job may not create `CONTRACT_CHANGE_S6.md`, so the request is recorded here. |
+| 9 (minor) | `cv2.imread` returning None crashes the decode | **Fixed.** `decode_folder` raises `ValueError` naming the PNG and says to delete the presentation folder and capture it again. A missing frame is a capture fault and must not be counted as a rejection. Test: `test_an_unreadable_frame_stops_the_decode_and_names_the_file`. |
+| 10 (minor) | The robot comparison is more lenient at odd multiples of 45 | **Fixed.** Prediction 4 now compares only primary frames at multiples of 90, and the summary says so. On main, the S2 simulation photographs at 90 k plus jitter (`jigsaw/experiment/sweep.py:76`), and `runner.classify` counts only turn k as correct. The counts table still reports both angle groups. |
+| 11 (minor) | After a resume the capture waits for an empty mat without telling the operator | **Fixed.** The `run_physical.py` instructions now say that a run, or a resumed run, starts by waiting for an empty card, and that a piece that moves before the beep is captured again. |
+| 12 (minor) | A give-up gives the reject reason of the current frame only | **Fixed.** The app keeps the last reject reason of the presentation (cleared by `no_grid`) and speaks it at a give-up. Tests: `test_a_give_up_names_the_last_reject_reason_of_the_presentation` and `test_an_empty_view_clears_the_reject_reason`. This also settles open question 2. |
+| 13 (minor) | The time base of the robot's frame stamps is unconfirmed | **Rejected, no change needed.** `ReachyRobot` uses `time.monotonic` as its default clock (`jigsaw/robot/reachy.py:86`) and stamps each frame with it in `frames()`. `connect()` builds `ReachyRobot(mini, create_head_pose)` with that default (`reachy.py:243`), and `app.run` also defaults to `time.monotonic`. `test_frames_during_speech_motion_and_settling_are_dropped` already uses stamps taken during the speech and the nod (1.0 s and 2.5 s). |
+
+### Commands and output
+
+```
+$ uv run pytest tests/test_stable.py              # finding 5 test, before the fix
+1 failed, 13 passed in 0.57s
+$ uv run pytest tests/test_stable.py              # after
+14 passed in 0.42s
+$ # mutation: block an announcement after a give-up
+1 failed, 13 passed in 0.46s                      (restored: 14 passed in 0.41s)
+$ uv run pytest tests/test_app.py -k reject_reason   # before the fix
+1 failed, 1 passed, 19 deselected in 0.60s
+$ uv run pytest tests/test_app.py -k "not gate and not run_demo"   # after
+16 passed, 5 deselected in 6.66s
+$ # mutation: keep the reason across no_grid
+1 failed, 1 passed, 19 deselected in 0.53s        (restored: 2 passed, 19 deselected in 0.46s)
+$ uv run pytest tests/test_app.py -k gate -s
+A3 gate over 200 presentations: correct 187, given up 11, silent (no_grid) 2, wrong 0
+1 passed, 20 deselected in 116.75s (0:01:56)
+$ # mutation: a give-up nods instead of shaking
+AssertionError: (2, ['nod'], {'frames': 15, 'dropped': 0, 'announced': [], 'gave_up': 1})   (restored)
+$ uv run pytest tests/test_app.py
+21 passed in 128.96s (0:02:08)
+$ uv run pytest tests/test_protocol.py -k "wait or still or slow"   # before the fix
+3 failed, 12 deselected in 3.53s                  (slow turn: saved frames at IoU 0.606 to 0.614 with the final pose)
+$ uv run pytest tests/test_protocol.py
+15 passed in 56.51s
+$ uv run pytest tests/test_protocol.py -k "unreadable or writes_csv"   # before the fix
+2 failed, 14 deselected in 33.32s
+$ uv run pytest tests/test_protocol.py
+16 passed in 60.81s (0:01:00)
+$ uv run ruff check <each changed file>
+All checks passed!
+$ uv run pytest                                   # full suite at b11ca9f
+242 passed in 316.83s (0:05:16)
+```
+
+242 = 236 + 1 in `test_stable.py` + 2 in `test_app.py` + 3 in `test_protocol.py`. The A3 counts did not change: 187 correct, 13 not answered with a piece (11 give-ups, 2 silent), 0 wrong.
+
+### Open questions from the review
+
+3. Finding 1: `ask` answers from one frame, as A6 says. If every spoken answer should pass Stable, `ask` should instead wait for the next stable read, and A6 must change. While checking this I also noticed that Stable is not told about an `ask` answer, so the same presentation can still give up afterwards (a nod and then a shake, or two shakes). I left this unchanged.
+4. Finding 8: `physical.csv` needs either a written exemption from CLAUDE.md rule 4 or a CONTRACTS section 6 change that adds `seed` before `commit`. That needs a `CONTRACT_CHANGE_S6.md`, which only TJ can approve.
