@@ -115,7 +115,8 @@ class ReachyRobot:
     def frames(self) -> Iterator[Frame]:
         """New camera frames only: None and a frame byte-identical to the previous one are skipped.
 
-        After STALL_WARN_S without a new frame it logs a warning (again every STALL_WARN_S) and keeps waiting.
+        After STALL_WARN_S of waiting without a new frame it logs a warning (again every STALL_WARN_S) and keeps
+        waiting. Time the caller spends between two frames does not count as waiting.
         """
         K, D = self._intrinsics()
         prev = None
@@ -134,9 +135,10 @@ class ReachyRobot:
                     last_warn = now
                 time.sleep(0.005)
                 continue
-            prev, last_new, last_warn = image, now, now
+            prev = image
             # UNVERIFIED: BGR channel order (media/webrtc_client_gstreamer.py:170); needs the red-object check in p2.
             yield Frame(image, now, self._k_for(K, image.shape[0]), D)
+            last_new = last_warn = self._clock()     # the wait for the next frame starts when the caller asks
 
     def _wait_for_frame(self, timeout: float) -> bool:
         t0 = time.monotonic()

@@ -161,6 +161,17 @@ def test_frames_warn_every_2_s_without_a_new_frame_and_keep_waiting(caplog, n_no
     assert sum("no new camera frame" in r.getMessage() for r in caplog.records) == n_warnings
 
 
+def test_frames_do_not_count_time_the_consumer_spends_between_frames(caplog):
+    clock = FakeClock()
+    media = TickingMedia(clock, 0.25, [img(1), None, None, img(2)])
+    it = ReachyRobot(StubMini(media), pose, clock=clock).frames()
+    with caplog.at_level(logging.WARNING, logger="jigsaw.robot.reachy"):
+        next(it)
+        clock.t += 10.0                        # the caller is busy (an operator prompt) for 10 s
+        assert int(next(it).image[0, 0, 0]) == 2
+    assert not any("no new camera frame" in r.getMessage() for r in caplog.records)
+
+
 def test_frames_have_none_intrinsics_when_the_camera_cannot_give_them():
     class NoIntrinsics:
         @property
