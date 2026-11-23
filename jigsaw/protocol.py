@@ -30,7 +30,7 @@ from jigsaw.vision import paper_mask
 ANGLES = tuple(range(0, 360, 45))
 PRESENT_FRAMES = 5
 SET_FRAMES = 5
-STILL_IOU = 0.9
+STILL_IOU = 0.9  # UNVERIFIED: placeholder, not measured with the robot's camera; the five-piece dry run checks it
 
 
 def folder_name(row: int, col: int, angle: int) -> str:

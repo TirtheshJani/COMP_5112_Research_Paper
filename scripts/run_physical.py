@@ -16,10 +16,12 @@ from jigsaw.protocol import ANGLES, capture
 ROOT = Path(__file__).resolve().parents[1]
 BEEP_RATE = 16000
 
-INSTRUCTIONS = """Physical test. Start with the empty green card filling the camera view.
-For each prompt: hold the piece with the picture upright, flip it left to right so the grid faces the robot,
-then turn it counter-clockwise by the angle as the robot sees it (clockwise as you see the picture side).
-Keep it still over the card until the beep. Between pieces, take the piece away so the card is empty.
+# UNVERIFIED: turn direction derived (docs/jigsaw/S6_app_physical.md v2 box, CONTRACTS.md section 2), not yet done
+# with a real piece; the A13 check and the five-piece dry run confirm it.
+INSTRUCTIONS = """Physical test. Start with nothing but the green card in the camera view.
+For each prompt: hold the piece up over the card, grid facing the robot, picture facing you and upright (angle 0).
+Then turn it clockwise by the angle as you see the picture (the robot sees the grid turn counter-clockwise).
+Keep it still until the beep. Between pieces, take the piece away so the card is empty.
 Ctrl+C stops; running the same command again resumes."""
 
 
