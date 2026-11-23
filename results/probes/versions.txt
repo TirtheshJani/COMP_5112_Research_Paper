@@ -1,0 +1,11 @@
+Reachy Mini versions (S3 task 1, 23 Nov 2026)
+
+SDK on the laptop:      reachy-mini 1.15.0 (uv.lock; pinned in pyproject robot group as reachy-mini==1.15.0)
+GStreamer runtime:      gstreamer-bundle 1.28.3 (wheel dependency of reachy-mini)
+Python:                 Python 3.13.12
+Robot daemon:           1.15.0, from results/probes/p1.txt (/api/daemon/status "version") and re-read live
+                        on 23 Nov from http://10.0.0.100:8000/api/daemon/status (state "running")
+Robot:                  Reachy Mini Wireless (wireless_version true, camera_specs_name "wireless")
+
+SDK and daemon versions match. Version-mismatch warning from the SDK at connect: see the
+"connect warnings" line below, filled in from the first SDK connection (task 3 probe rerun).
