@@ -398,6 +398,26 @@ def test_connect_drain_is_bounded_when_the_sdk_never_returns_none(monkeypatch):
     assert 0 < media.audio_reads <= reachy.DRAIN_MAX_READS
 
 
+class SlowEndlessMedia(EndlessMedia):
+    """Like the SDK when live data keeps arriving: every read waits about 10 ms and returns data."""
+
+    def get_frame(self):
+        time.sleep(0.01)
+        return super().get_frame()
+
+    def get_audio_sample(self):
+        time.sleep(0.01)
+        return super().get_audio_sample()
+
+
+def test_connect_drain_also_stops_after_a_time_limit(monkeypatch):
+    media = SlowEndlessMedia()
+    _fake_sdk(monkeypatch, lambda **kw: StubMini(media))
+    monkeypatch.setattr(reachy, "DRAIN_MAX_S", 0.05)
+    connect()
+    assert media.frame_reads <= 1 + 6 and media.audio_reads <= 6       # reads of 10 ms or more fit 0.05 s at most 5 times
+
+
 def test_connect_passes_host_and_returns_a_robot(monkeypatch):
     seen = []
 

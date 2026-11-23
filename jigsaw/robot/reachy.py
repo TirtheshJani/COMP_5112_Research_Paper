@@ -29,6 +29,8 @@ FIRST_FRAME_TIMEOUT_S = 5.0
 STALL_WARN_S = 2.0          # frames() logs a warning after this long without a new frame, and keeps waiting
 DRAIN_MAX_READS = 600       # cap per stream when connect() drains; the audio appsink holds up to 500 buffers
                             # (media/webrtc_client_gstreamer.py:127), the video appsink 1 (:142)
+DRAIN_MAX_S = 0.5           # and a time cap per stream: each SDK read waits up to 20 ms for live data
+                            # (media/gstreamer_utils.py:132), so live audio may never let a read return None
 HELP = ("Check three things: (1) the robot is powered on and has finished booting; (2) the laptop is on the "
         "same Wi-Fi as the robot (if reachy-mini.local does not resolve, pass the robot's IP address as host); "
         "(3) the conversation app is stopped in the robot's dashboard, because it holds the camera and audio.")
@@ -149,14 +151,16 @@ class ReachyRobot:
         return False
 
     def _drain(self) -> None:
-        """Read and discard queued frames and recorded audio until the SDK returns None, at most DRAIN_MAX_READS each."""
-        n_frames = n_audio = 0
-        while n_frames < DRAIN_MAX_READS and self.mini.media.get_frame() is not None:
-            n_frames += 1
-        while n_audio < DRAIN_MAX_READS and self.read() is not None:
-            n_audio += 1
-        log.info("connect dropped %d stale frames and %d stale audio chunks (cap %d reads each)",
-                 n_frames, n_audio, DRAIN_MAX_READS)
+        """Read and discard queued frames, then recorded audio, until the SDK returns None; each stream stops
+        early after DRAIN_MAX_READS reads or DRAIN_MAX_S seconds."""
+        counts = []
+        for read in (self.mini.media.get_frame, self.read):
+            n, t0 = 0, self._clock()
+            while n < DRAIN_MAX_READS and self._clock() - t0 < DRAIN_MAX_S and read() is not None:
+                n += 1
+            counts.append(n)
+        log.info("connect dropped %d stale frames and %d stale audio chunks (caps: %d reads, %g s per stream)",
+                 counts[0], counts[1], DRAIN_MAX_READS, DRAIN_MAX_S)
 
     def close(self) -> None:
         if self._closed:
