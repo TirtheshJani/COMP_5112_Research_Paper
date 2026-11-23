@@ -1,4 +1,5 @@
 """ReachyRobot and connect() against a stub mini object (S3, R6 to R11). No robot, no reachy_mini."""
+import itertools
 import logging
 import subprocess
 import sys
@@ -119,6 +120,45 @@ def test_frames_skip_none_and_carry_bgr_image_time_k_and_d():
     assert frames[0].image is not None and frames[0].image.dtype == np.uint8
     ts = [f.t for f in frames]
     assert ts == sorted(ts)
+
+
+class FakeClock:
+    def __init__(self, t: float = 100.0):
+        self.t = t
+
+    def __call__(self) -> float:
+        return self.t
+
+
+class TickingMedia(StubMedia):
+    """A camera whose every get_frame() call takes `step` seconds of the injected clock."""
+
+    def __init__(self, clock: FakeClock, step: float, frames):
+        super().__init__(frames=frames)
+        self.clock, self.step = clock, step
+
+    def get_frame(self):
+        self.clock.t += self.step
+        return super().get_frame()
+
+
+def test_frames_skip_a_frame_identical_to_the_previous_one():
+    media = StubMedia(frames=[img(1), img(1), None, img(1), img(2), img(2).copy(), img(1)])
+    frames = list(itertools.islice(ReachyRobot(StubMini(media), pose).frames(), 3))
+    assert [int(f.image[0, 0, 0]) for f in frames] == [1, 2, 1]
+
+
+@pytest.mark.parametrize("n_nothing_new, n_warnings", [(7, 0), (8, 1), (16, 2)])
+def test_frames_warn_every_2_s_without_a_new_frame_and_keep_waiting(caplog, n_nothing_new, n_warnings):
+    clock = FakeClock()
+    nothing_new = [None if k % 2 else img(1) for k in range(n_nothing_new)]     # None and repeats alike
+    media = TickingMedia(clock, 0.25, [img(1), *nothing_new, img(2)])
+    it = ReachyRobot(StubMini(media), pose, clock=clock).frames()
+    with caplog.at_level(logging.WARNING, logger="jigsaw.robot.reachy"):
+        first, second = next(it), next(it)
+    assert int(second.image[0, 0, 0]) == 2
+    assert second.t - first.t == pytest.approx(0.25 * (n_nothing_new + 1))      # Frame.t comes from the clock
+    assert sum("no new camera frame" in r.getMessage() for r in caplog.records) == n_warnings
 
 
 def test_frames_have_none_intrinsics_when_the_camera_cannot_give_them():

@@ -26,6 +26,7 @@ from jigsaw.types import Frame
 log = logging.getLogger(__name__)
 
 FIRST_FRAME_TIMEOUT_S = 5.0
+STALL_WARN_S = 2.0          # frames() logs a warning after this long without a new frame, and keeps waiting
 HELP = ("Check three things: (1) the robot is powered on and has finished booting; (2) the laptop is on the "
         "same Wi-Fi as the robot (if reachy-mini.local does not resolve, pass the robot's IP address as host); "
         "(3) the conversation app is stopped in the robot's dashboard, because it holds the camera and audio.")
@@ -58,12 +59,13 @@ class ReachyRobot:
     """FrameSource, Gestures, AudioOut and AudioIn over one connected ReachyMini (`mini`).
 
     head_pose builds a head target from pitch/yaw keywords in degrees (reachy_mini.utils.create_head_pose).
+    clock gives Frame.t and times the no-new-frame warning (tests inject a fake one).
     """
 
     name = "reachy"
 
-    def __init__(self, mini, head_pose: Callable[..., object]):
-        self.mini, self.head_pose = mini, head_pose
+    def __init__(self, mini, head_pose: Callable[..., object], clock: Callable[[], float] = time.monotonic):
+        self.mini, self.head_pose, self._clock = mini, head_pose, clock
         media = mini.media
         self.out_rate = int(media.get_output_audio_samplerate())
         self.rate = int(media.get_input_audio_samplerate())
@@ -86,7 +88,13 @@ class ReachyRobot:
         return out[0], out[1]
 
     def frames(self) -> Iterator[Frame]:
+        """New camera frames only: None and a frame byte-identical to the previous one are skipped.
+
+        After STALL_WARN_S without a new frame it logs a warning (again every STALL_WARN_S) and keeps waiting.
+        """
         K, D = self._intrinsics()
+        prev = None
+        last_new = last_warn = self._clock()
         while not self._closed:
             try:
                 image = self.mini.media.get_frame()
@@ -94,11 +102,16 @@ class ReachyRobot:
                 if self._closed:
                     return
                 raise
-            if image is None:
+            now = self._clock()
+            if image is None or (prev is not None and np.array_equal(image, prev)):
+                if now - last_warn >= STALL_WARN_S:
+                    log.warning("no new camera frame for %.1f s; still waiting", now - last_new)
+                    last_warn = now
                 time.sleep(0.005)
                 continue
+            prev, last_new, last_warn = image, now, now
             # UNVERIFIED: BGR channel order (media/webrtc_client_gstreamer.py:170); needs the red-object check in p2.
-            yield Frame(image, time.monotonic(), K, D)
+            yield Frame(image, now, K, D)
 
     def _wait_for_frame(self, timeout: float) -> bool:
         t0 = time.monotonic()
