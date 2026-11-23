@@ -41,4 +41,4 @@ def test_phrase_reject(reason, text):
 
 def test_no_em_dash():
     for t in range(4):
-        assert not {"—", "–"} & set(phrase_read(Read(0, 0, t)))
+        assert not {chr(0x2014), chr(0x2013)} & set(phrase_read(Read(0, 0, t)))
