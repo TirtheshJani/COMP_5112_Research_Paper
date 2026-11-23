@@ -10,10 +10,12 @@ import json
 import re
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 
 from jigsaw import protocol
+from jigsaw.fakes import FakeFrameSource
 from jigsaw.render import MAT_BGR, photograph, piece_back
 from jigsaw.types import PUZZLE_COLS, PUZZLE_ROWS, Frame
 
@@ -26,7 +28,8 @@ K = np.array([[500.0, 0, 240], [0, 500.0, 240], [0, 0, 1]])
 
 # label (row, col, angle) -> what the operator really showed (row, col, angle)
 SHOWN = {(0, 0, 45): (6, 4, 45), (1, 1, 0): (1, 1, 180)}
-# label -> (index of the saved frame, what that one frame showed)
+# label -> (index of a saved frame, the picture written over it after the capture): one wrong frame in an
+# otherwise right presentation, for the decode. The capture itself saves no frame in which the piece moved.
 SWAPPED = {(2, 2, 0): (3, (5, 0, 0))}
 
 
@@ -63,11 +66,7 @@ class Operator:
         m = PROMPT.fullmatch(text)
         label = (int(m.group(1)) - 1, int(m.group(2)) - 1, int(m.group(3)))
         img = picture(*SHOWN.get(label, label))
-        saved = [img] * protocol.SET_FRAMES
-        if label in SWAPPED:
-            n, other = SWAPPED[label]
-            saved[n] = picture(*other)
-        self.queue += [MAT] + [img] * protocol.PRESENT_FRAMES + saved
+        self.queue += [MAT] + [img] * (protocol.PRESENT_FRAMES + protocol.SET_FRAMES)
 
     def beep(self):
         self.beeps += 1
@@ -87,6 +86,8 @@ def captured(tmp_path_factory):
     out = tmp_path_factory.mktemp("frames")
     op = Operator()
     result = protocol.capture(op, out, op.prompt, op.beep, angles=ANGLES)
+    for (r, c, a), (n, other) in SWAPPED.items():
+        cv2.imwrite(str(out / protocol.folder_name(r, c, a) / f"f{n}.png"), picture(*other))
     return out, op, result
 
 
@@ -143,6 +144,40 @@ def test_wait_needs_a_change_then_a_still_piece():
     assert mask is not None and next(it).image is MAT                           # returned at the fifth still b
     it = frames_of([a, MAT, a, a, a, a, a, MAT])
     assert protocol.wait_for_piece(it, ref) is not None and next(it).image is MAT
+    assert protocol.wait_for_piece(frames_of([a] * 5), ref, changed=True) is not None   # after a moved set
+
+
+def saved_images(folder):
+    return [cv2.imread(str(folder / f"f{n}.png"), cv2.IMREAD_COLOR) for n in range(protocol.SET_FRAMES)]
+
+
+def test_a_set_is_saved_only_while_the_piece_stays_still(tmp_path):
+    a = picture(3, 3, 0)
+    jumped = np.roll(a, 60, axis=1)
+    still, held = [a] * protocol.PRESENT_FRAMES, [a] * (protocol.PRESENT_FRAMES + protocol.SET_FRAMES)
+    for name, images in [("left", [MAT, *still, a, a, MAT, *held]), ("jumped", [MAT, *still, a, jumped, *held])]:
+        out = tmp_path / name
+        beeps = []
+        assert protocol.capture(FakeFrameSource(images), out, lambda text: None, lambda: beeps.append(1),
+                                pieces=[(3, 3)], angles=(0,)) == {"captured": 1, "skipped": 0, "complete": True}
+        assert beeps == [1] and all(np.array_equal(img, a) for img in saved_images(out / "r3_c3_a000")), name
+
+
+def test_a_slow_turn_is_not_saved_mid_turn(tmp_path):
+    # a steady turn of 0.6 degrees per frame from 0 to 45, then held: five frames of it stay within STILL_IOU
+    # of the first (about 3.5 degrees on this rendering), ten frames do not
+    back = piece_back(3, 3, PPC)
+
+    def at(angle):
+        return photograph(*back, np.random.default_rng(7), angle, size=SIZE, noise=2)
+
+    turn = [at(0.6 * i) for i in range(76)]
+    images = [MAT, *turn, *[at(45)] * 20]
+    assert protocol.capture(FakeFrameSource(images), tmp_path, lambda text: None, lambda: None,
+                            pieces=[(3, 3)], angles=(45,))["captured"] == 1
+    final = protocol.paper_mask(at(45)) > 0
+    overlaps = [protocol.iou(protocol.paper_mask(img) > 0, final) for img in saved_images(tmp_path / "r3_c3_a045")]
+    assert min(overlaps) >= 0.95, overlaps
 
 
 def test_resume_skips_what_exists_and_overwrites_nothing(tmp_path):

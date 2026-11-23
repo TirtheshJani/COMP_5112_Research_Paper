@@ -18,10 +18,12 @@ BEEP_RATE = 16000
 
 # UNVERIFIED: turn direction derived (docs/jigsaw/S6_app_physical.md v2 box, CONTRACTS.md section 2), not yet done
 # with a real piece; the A13 check and the five-piece dry run confirm it.
-INSTRUCTIONS = """Physical test. Start with nothing but the green card in the camera view.
+INSTRUCTIONS = """Physical test. Start with nothing but the green card in the camera view: the first prompt of a run,
+and of a resumed run, waits for an empty card before it looks for the piece.
 For each prompt: hold the piece up over the card, grid facing the robot, picture facing you and upright (angle 0).
 Then turn it clockwise by the angle as you see the picture (the robot sees the grid turn counter-clockwise).
-Keep it still until the beep. Between pieces, take the piece away so the card is empty.
+Keep it still until the beep. If it moves before the beep, those frames are thrown away: hold it still again.
+Between pieces, take the piece away so the card is empty.
 Ctrl+C stops; running the same command again resumes."""
 
 

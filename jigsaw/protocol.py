@@ -3,11 +3,13 @@
 For each piece in front order (row by row) and each nominal angle 0, 45, ..., 315 the operator is prompted
 ("Piece row 2, column 3, angle 90."). The capture then waits for the view to change (an empty mat, or a piece
 that no longer overlaps the last saved one), then for paper_mask to find a piece in PRESENT_FRAMES frames in a
-row without it moving, saves the next SET_FRAMES frames as PNG with a sidecar JSON and beeps.
+row without it moving, takes the next SET_FRAMES frames, saves them as PNG with a sidecar JSON and beeps.
 
 The change and stillness conditions are additions to "present for 5 frames in a row": without them the piece
-from the previous presentation would be captured before the operator turns or swaps it. STILL_IOU is a
-placeholder that the five-piece dry run checks.
+from the previous presentation would be captured before the operator turns or swaps it. The piece must also
+stay still through the SET_FRAMES frames taken: if it moves or leaves, they are dropped (nothing is written)
+and the capture waits for a still piece again, without a new prompt. Stillness is judged on paper_mask only,
+never on a decode. STILL_IOU is a placeholder that the five-piece dry run checks.
 
 Nominal angle: counter-clockwise as seen by the camera, from the back's upright position, so 90 is turn 1.
 
@@ -47,14 +49,15 @@ def iou(a: np.ndarray, b: np.ndarray) -> float:
     return np.count_nonzero(a & b) / union if union else 1.0
 
 
-def wait_for_piece(frames: Iterator[Frame], reference: np.ndarray | None) -> np.ndarray | None:
-    """Mask of a piece that is present and still for PRESENT_FRAMES frames, after the view has changed.
+def wait_for_piece(frames: Iterator[Frame], reference: np.ndarray | None, changed: bool = False) -> np.ndarray | None:
+    """First mask of a run of PRESENT_FRAMES frames in which a piece is present and still, after the view has changed.
 
     The view has changed at a frame with no piece, or with a piece overlapping `reference` (the last saved
-    mask) by less than STILL_IOU; with no reference only an empty frame counts. A run of frames is still while
-    every mask overlaps the run's first by at least STILL_IOU. Returns None when the frames end.
+    mask) by less than STILL_IOU; with no reference only an empty frame counts; changed=True skips this test.
+    A run of frames is still while every mask overlaps the run's first by at least STILL_IOU. Returns None
+    when the frames end.
     """
-    changed, run = False, []
+    run = []
     for frame in frames:
         m = paper_mask(frame.image)
         if m is None:
@@ -69,8 +72,34 @@ def wait_for_piece(frames: Iterator[Frame], reference: np.ndarray | None) -> np.
             run = []
         run.append(m)
         if len(run) == PRESENT_FRAMES:
-            return m
+            return run[0]
     return None
+
+
+def still_set(frames: Iterator[Frame], reference: np.ndarray | None) -> tuple[np.ndarray, list[Frame]] | None:
+    """The SET_FRAMES frames to save for one prompt, and the mask the piece was held still at.
+
+    Waits with wait_for_piece, then takes the next SET_FRAMES frames; each must show the piece overlapping the
+    run's first mask by at least STILL_IOU, so PRESENT_FRAMES + SET_FRAMES frames in a row are still. At a
+    frame where the piece moved or left, the frames taken are dropped and the wait starts again (the view has
+    already changed for this prompt). Returns None when the frames end.
+    """
+    changed = False
+    while True:
+        anchor = wait_for_piece(frames, reference, changed)
+        if anchor is None:
+            return None
+        taken = []
+        for frame in frames:
+            m = paper_mask(frame.image)
+            if m is None or iou(m > 0, anchor) < STILL_IOU:
+                break
+            taken.append(frame)
+            if len(taken) == SET_FRAMES:
+                return anchor, taken
+        else:
+            return None
+        changed = True
 
 
 def _sidecar(row: int, col: int, angle: int, n: int, frame: Frame) -> dict:
@@ -100,14 +129,12 @@ def capture(source: FrameSource, out_dir: str | Path, prompt: Callable[[str], No
             if partial.exists():
                 shutil.rmtree(partial)
             prompt(prompt_text(row, col, angle))
-            reference = wait_for_piece(frames, reference)
-            if reference is None:
+            got = still_set(frames, reference)
+            if got is None:
                 return done
+            reference, taken = got
             partial.mkdir()
-            for n in range(SET_FRAMES):
-                frame = next(frames, None)
-                if frame is None:
-                    return done
+            for n, frame in enumerate(taken):
                 cv2.imwrite(str(partial / f"f{n}.png"), frame.image)
                 (partial / f"f{n}.json").write_text(json.dumps(_sidecar(row, col, angle, n, frame)))
             partial.rename(final)
