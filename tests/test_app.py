@@ -11,8 +11,8 @@ from jigsaw import app
 from jigsaw.fakes import FakeAudioOut, FakeFrameSource, FakeGestures
 from jigsaw.render import photograph, piece_back
 from jigsaw.robot.sources import RenderSource
-from jigsaw.types import Frame, Read
-from jigsaw.voice.phrases import phrase_read
+from jigsaw.types import Frame, Read, Reject
+from jigsaw.voice.phrases import phrase_read, phrase_reject
 
 ROOT = Path(__file__).resolve().parents[1]
 SIZE = (640, 480)
@@ -109,6 +109,35 @@ def test_a_corrupted_piece_gives_no_announcement_and_one_shake():
     assert out["announced"] == [] and out["gave_up"] == 1
     assert gestures.calls == ["shake"] and len(audio.played) == 1
     assert not spoken.texts[0].startswith("Row")
+
+
+class ScriptedReader:
+    """PieceReader stand-in that returns the given decisions in order."""
+
+    def __init__(self, decisions):
+        self.decisions, self.last_grid = list(decisions), None
+
+    def read(self, image):
+        return self.decisions.pop(0)
+
+
+def test_a_give_up_names_the_last_reject_reason_of_the_presentation(monkeypatch):
+    # the 15th miss is a Read that has not settled; the sentence still names why the piece could not be read
+    decisions = [Reject("no_window")] * 14 + [Read(3, 2, 1)]
+    monkeypatch.setattr(app, "PieceReader", lambda: ScriptedReader(decisions))
+    spoken = Spoken()
+    out = app.run(FakeFrameSource([np.zeros((4, 4, 3), np.uint8)] * 15), FakeGestures(), FakeAudioOut(),
+                  synthesize=spoken)
+    assert out["gave_up"] == 1 and spoken.texts == [phrase_reject("no_window")]
+
+
+def test_an_empty_view_clears_the_reject_reason(monkeypatch):
+    decisions = [Reject("no_window"), Reject("no_grid")] + [Read(3, 2, 1), Read(1, 1, 0)] * 8
+    monkeypatch.setattr(app, "PieceReader", lambda: ScriptedReader(decisions))
+    spoken = Spoken()
+    out = app.run(FakeFrameSource([np.zeros((4, 4, 3), np.uint8)] * 18), FakeGestures(), FakeAudioOut(),
+                  synthesize=spoken)
+    assert out["gave_up"] == 1 and spoken.texts == [phrase_reject("")]
 
 
 def test_events_follow_the_contract_and_are_json():
@@ -316,18 +345,29 @@ def test_gate_200_presentations_never_announce_a_wrong_piece_or_turn():
                     finger=bool(rng.random() < 0.3), background=str(rng.choice(["mat"] * 18 + ["clutter", "plain"])))
         ppc = float(rng.uniform(10, 18))
         p = Presentation(RenderSource(rng, [(r, c)] * GATE_MAX_FRAMES, px_per_cell=ppc, size=SIZE, **cond))
-        out = app.run(p, Answering(p), FakeAudioOut(), synthesize=silent)
+        gestures, bus = Answering(p), ListBus()
+        out = app.run(p, gestures, FakeAudioOut(), bus=bus, synthesize=silent)
         truth = Read(r, c, k)
+        # every gesture is accounted for: a nod per announcement, a shake per give-up, at most one answer
+        assert gestures.calls.count("nod") == len(out["announced"]), (i, gestures.calls, out)
+        assert gestures.calls.count("shake") == out["gave_up"] and len(gestures.calls) <= 1, (i, gestures.calls, out)
         if any(a != truth for a in out["announced"]):
             counts["wrong"] += 1
             findings.append(save_finding(i, truth, out["announced"], {**cond, "px_per_cell": ppc}, p.images))
         elif out["announced"]:
             counts["correct"] += 1
+        elif out["gave_up"]:
+            counts["given_up"] += 1
         else:
-            counts["rejected_or_given_up"] += 1
-    print(f"\nA3 gate over {GATE_N} presentations: correct {counts['correct']}, "
-          f"rejected or given up {counts['rejected_or_given_up']}, wrong {counts['wrong']}")
+            # Stable answers within miss_limit < GATE_MAX_FRAMES frames unless an empty view (no_grid) resets it
+            reasons = [e["decision"].get("reason") for e in bus.of("frame")]
+            assert "no_grid" in reasons, (i, reasons)
+            counts["silent"] += 1
+    print(f"\nA3 gate over {GATE_N} presentations: correct {counts['correct']}, given up {counts['given_up']}, "
+          f"silent (no_grid) {counts['silent']}, wrong {counts['wrong']}")
     assert counts["wrong"] == 0, f"WRONG ANNOUNCE: {findings}"
+    # not a tuned threshold: it only stops a gate that announces nothing from passing (observed 187 of 200,
+    # Wilson 95 percent interval 0.892 to 0.962, so the floor of 0.75 is far below anything this code produces)
     assert counts["correct"] >= 150, counts
 
 

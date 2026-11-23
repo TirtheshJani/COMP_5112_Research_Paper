@@ -65,6 +65,7 @@ def run(source: FrameSource, gestures: Gestures, audio_out: AudioOut, bus=None, 
     out: dict = {"frames": 0, "dropped": 0, "announced": [], "gave_up": 0}
     quiet_until = float("-inf")
     last_text: str | None = None
+    reason = ""             # last reject reason of this presentation, for the give-up sentence
     ask = False
 
     def publish(event: dict) -> None:
@@ -91,8 +92,8 @@ def run(source: FrameSource, gestures: Gestures, audio_out: AudioOut, bus=None, 
         last_text = text
         speak(text, gestures.nod)
 
-    def give_up(d: Decision) -> None:
-        text = phrase_reject(d.reason if isinstance(d, Reject) else "")
+    def give_up(why: str) -> None:
+        text = phrase_reject(why)
         publish({"type": "give_up", "text": text})
         log.info("give up: %s", text)
         out["gave_up"] += 1
@@ -121,17 +122,19 @@ def run(source: FrameSource, gestures: Gestures, audio_out: AudioOut, bus=None, 
             if ok:
                 bus.set_frame(jpeg.tobytes())
         publish(frame_event(frame, d, reader.last_grid))
+        if isinstance(d, Reject):
+            reason = "" if d.reason == "no_grid" else d.reason      # no_grid ends the presentation
         if ask:
             ask = False
             if isinstance(d, Read):
                 stable.last = d
                 announce(d)
             else:
-                give_up(d)
+                give_up(d.reason)
             continue
         what = stable.update(d)
         if what == "announce":
             announce(stable.last)
         elif what == "give_up":
-            give_up(d)
+            give_up(reason)
     return out
