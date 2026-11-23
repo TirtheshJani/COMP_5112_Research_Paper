@@ -1,0 +1,39 @@
+{"type": "board", "placed": []}
+{"type": "head", "pose": [1, 0, 0, 0, 0, 1.0, -0.0, 0, 0, 0.0, 1.0, 0, 0, 0, 0, 1]}
+{"type": "frame", "t": 0.0, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 0.1, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 0.2, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_mat"}}
+{"type": "frame", "t": 0.3, "grid": [[541.1, 452.1], [301.2, 468.3], [285.3, 227.2], [529.9, 215.3]], "rvec": [0.0, 0.0, 3.1416], "tvec": [-12.0, 8.0, 320.0], "decision": {"kind": "read", "row": 3, "col": 1, "turn": 2}}
+{"type": "frame", "t": 0.4, "grid": [[478.4, 447.6], [239.6, 448.9], [235.5, 207.3], [474.6, 201.8]], "rvec": [0.0, 0.0, 3.1416], "tvec": [-11.0, 8.0, 320.0], "decision": {"kind": "read", "row": 3, "col": 1, "turn": 2}}
+{"type": "frame", "t": 0.5, "grid": [[544.4, 487.0], [308.2, 492.5], [302.0, 256.7], [539.5, 247.7]], "rvec": [0.0, 0.0, 3.1416], "tvec": [-10.0, 8.0, 320.0], "decision": {"kind": "read", "row": 3, "col": 1, "turn": 2}}
+{"type": "frame", "t": 0.6, "grid": [[552.7, 446.0], [310.3, 434.7], [318.3, 192.1], [559.5, 202.2]], "rvec": [0.0, 0.0, 3.1416], "tvec": [-9.0, 8.0, 320.0], "decision": {"kind": "read", "row": 3, "col": 1, "turn": 2}}
+{"type": "announce", "row": 3, "col": 1, "turn": 2, "text": "Row 4, column 2. Turn it half way round."}
+{"type": "board", "placed": [[3, 1]]}
+{"type": "frame", "t": 0.7, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 0.8, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "ambiguous"}}
+{"type": "frame", "t": 0.9, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 1.0, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "head", "pose": [1, 0, 0, 0, 0, 0.9781, 0.2079, 0, 0, -0.2079, 0.9781, 0, 0, 0, 0, 1]}
+{"type": "frame", "t": 1.1, "grid": [[226.5, 192.4], [464.5, 190.5], [473.5, 424.9], [233.5, 428.8]], "rvec": [0.0, 0.0, 0.0], "tvec": [20.0, -6.0, 320.0], "decision": {"kind": "read", "row": 0, "col": 4, "turn": 0}}
+{"type": "frame", "t": 1.2, "grid": [[187.2, 249.7], [427.3, 234.2], [445.6, 475.4], [202.6, 489.5]], "rvec": [0.0, 0.0, 0.0], "tvec": [20.0, -5.0, 320.0], "decision": {"kind": "read", "row": 0, "col": 4, "turn": 0}}
+{"type": "frame", "t": 1.3, "grid": [[260.5, 212.7], [503.8, 215.9], [498.9, 454.1], [255.7, 448.4]], "rvec": [0.0, 0.0, 0.0], "tvec": [20.0, -4.0, 320.0], "decision": {"kind": "read", "row": 0, "col": 4, "turn": 0}}
+{"type": "frame", "t": 1.4, "grid": [[287.0, 209.7], [530.7, 215.9], [526.5, 453.8], [288.0, 453.1]], "rvec": [0.0, 0.0, 0.0], "tvec": [20.0, -3.0, 320.0], "decision": {"kind": "read", "row": 0, "col": 4, "turn": 0}}
+{"type": "announce", "row": 0, "col": 4, "turn": 0, "text": "Row 1, column 5. Keep it as it is."}
+{"type": "board", "placed": [[3, 1], [0, 4]]}
+{"type": "frame", "t": 1.5, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 1.6, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "too_many_errors"}}
+{"type": "frame", "t": 1.7, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "too_many_errors"}}
+{"type": "give_up", "text": "I cannot read that one. Show me again."}
+{"type": "frame", "t": 1.8, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 1.9, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 2.0, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "head", "pose": [1, 0, 0, 0, 0, 0.9945, 0.1045, 0, 0, -0.1045, 0.9945, 0, 0, 0, 0, 1]}
+{"type": "frame", "t": 2.1, "grid": [[228.2, 449.4], [242.6, 206.5], [477.5, 219.2], [466.9, 459.1]], "rvec": [0.0, 0.0, 1.5708], "tvec": [4.0, 14.0, 320.0], "decision": {"kind": "read", "row": 6, "col": 2, "turn": 1}}
+{"type": "frame", "t": 2.2, "grid": [[204.6, 533.3], [181.7, 291.1], [421.2, 276.3], [442.6, 513.5]], "rvec": [0.0, 0.0, 1.5708], "tvec": [4.0, 13.0, 320.0], "decision": {"kind": "read", "row": 6, "col": 2, "turn": 1}}
+{"type": "frame", "t": 2.3, "grid": [[239.8, 481.0], [261.1, 243.5], [498.9, 259.0], [479.8, 495.3]], "rvec": [0.0, 0.0, 1.5708], "tvec": [4.0, 12.0, 320.0], "decision": {"kind": "read", "row": 6, "col": 2, "turn": 1}}
+{"type": "frame", "t": 2.4, "grid": [[245.5, 548.7], [249.0, 309.6], [490.6, 308.3], [487.5, 548.4]], "rvec": [0.0, 0.0, 1.5708], "tvec": [4.0, 11.0, 320.0], "decision": {"kind": "read", "row": 6, "col": 2, "turn": 1}}
+{"type": "announce", "row": 6, "col": 2, "turn": 1, "text": "Row 7, column 3. Turn it a quarter turn."}
+{"type": "board", "placed": [[3, 1], [0, 4], [6, 2]]}
+{"type": "frame", "t": 2.5, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 2.6, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
+{"type": "frame", "t": 2.7, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
