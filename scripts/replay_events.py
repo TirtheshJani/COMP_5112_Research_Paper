@@ -4,7 +4,8 @@ Usage: uv run python scripts/replay_events.py tests/data/events_sample.jsonl --r
 
 For each frame event the matching JPEG is set on the bus before the event is published. Read frames
 show the announced piece at its turn on the green mat; a too_many_errors reject shows a piece on the mat
-(its grid is drawn in amber); other rejects show a piece at an odd angle on clutter. Frames are rendered once at start (seeded by the event's index) and reused on every loop.
+(its grid is drawn in amber); other rejects show a piece at an odd angle on clutter.
+Frames are rendered once at start (seeded by the event's index) and reused on every loop.
 """
 import argparse
 import json
