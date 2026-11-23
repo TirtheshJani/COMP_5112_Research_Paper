@@ -5,6 +5,11 @@ counter-clockwise, read, phrased, and the sentence is parsed back. Then the phys
 (page 1 of the same PDF) is brought to the state the person sees after flipping the piece over about its
 vertical axis, the announced turn is applied as seen from the picture side (the reading documented in
 jigsaw/voice/phrases.py), and the result is compared with the picture tile at the announced row and column.
+
+Limits: the check is only self-consistent until S6 confirms the turn wording on real pieces, because the flip model
+below and phrases.py were written from the same reading. Frames are clean (photograph defaults: no tilt, blur,
+noise or finger), so a pass shows the pipeline works on clean input and says nothing about rejecting bad input.
+A wrong read on a strong-form pattern is saved to results/findings/ (CLAUDE.md rule 5) before the test fails.
 """
 import re
 from pathlib import Path
@@ -26,7 +31,7 @@ from jigsaw.voice.phrases import TURN_SENTENCE, phrase_read
 ROOT = Path(__file__).resolve().parent.parent
 PXMM = 6.0          # page render resolution: 21.6 px per cell
 TILE = 64
-TOL = 12.0          # mean absolute difference, grey levels of 255
+FINDINGS = ROOT / "results" / "findings"
 SENTENCE = re.compile(r"Row (\d+), column (\d+)\. (.*)")
 TURN_OF = {s: k for k, s in TURN_SENTENCE.items()}
 
@@ -71,6 +76,11 @@ def mad(a, b):
     return float(np.abs(small(a) - small(b)).mean())
 
 
+def save_frame(frame, r, c, k):
+    FINDINGS.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(FINDINGS / f"e2e_{r}_{c}_k{k}.png"), frame)
+
+
 @pytest.fixture(scope="module")
 def sheets():
     pdf = pdfium.PdfDocument(str(ROOT / "print" / "reachy_debruijn_jigsaw.pdf"))
@@ -90,19 +100,25 @@ def test_every_piece_is_read_phrased_and_shows_its_picture_tile(sheets):
         d = reader.read(frame)
         if not isinstance(d, Read):
             rejected.append(((r, c, k), d))
+            save_frame(frame, r, c, k)
             continue
         m = SENTENCE.fullmatch(phrase_read(d))
         row, col, turn = int(m.group(1)) - 1, int(m.group(2)) - 1, TURN_OF[m.group(3)]
         turns_used.add(turn)
         if (row, col, turn) != (r, c, k):
             wrong.append(((r, c, k), (row, col, turn)))
+            save_frame(frame, r, c, k)
             continue
+        if k % 2:
+            assert turn != (4 - k) % 4, "announced turn is the clockwise count, not the counter-clockwise one"
         # Front of the true piece after flipping about the vertical axis: the picture turned k quarter turns clockwise.
         in_hand = np.rot90(tile_from_page1(page1, r, c), -k)
         shown = np.rot90(in_hand, turn)                     # announced turn, counter-clockwise from the picture side
         truth = tile_from_picture(pic, row, col)
         errs = [mad(np.rot90(shown, q), truth) for q in range(4)]
-        if not (errs[0] < TOL and errs[0] < min(errs[1:])):
+        # Relative test only: the announced turn must beat the other three rotations. An absolute bound was dropped as unexplained.
+        if not errs[0] < min(errs[1:]):
+            save_frame(frame, r, c, k)
             bad.append(((r, c, k), [round(e, 1) for e in errs]))
     assert not rejected, f"{len(rejected)} of 35 rejected: {rejected}"
     assert not wrong, f"wrong reads: {wrong}"

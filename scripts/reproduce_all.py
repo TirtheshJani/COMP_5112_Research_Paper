@@ -22,6 +22,7 @@ PDF = "print/reachy_debruijn_jigsaw.pdf"
 
 
 def run(cmd: list[str], cwd: Path, log: list[dict]) -> tuple[int, str]:
+    # SSL_CERT_FILE is removed because on this machine it points at a missing file, which breaks uv. The report records it.
     env = {k: v for k, v in os.environ.items() if k != "SSL_CERT_FILE"}
     p = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
     out = (p.stdout + p.stderr).strip()
@@ -54,16 +55,20 @@ def compare_pdf(committed: Path, rebuilt: Path) -> tuple[bool, str]:
 
 
 def main() -> int:
+    allow_dirty = "--allow-dirty" in sys.argv[1:]
     log: list[dict] = []
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    if dirty and not allow_dirty:
+        print("refusing to run with uncommitted tracked changes; commit them or pass --allow-dirty")
+        return 2
     dest = REPRO / f"clone_{commit[:10]}"
     if dest.exists():
         shutil.rmtree(dest, ignore_errors=True)
     REPRO.mkdir(parents=True, exist_ok=True)
-    notes: list[str] = []
+    notes: list[str] = ["SSL_CERT_FILE unset in every subprocess (reproduction env differs from the shell env in that variable only)."]
     if dirty:
-        notes.append("Working tree has uncommitted tracked changes; the clone contains only the committed state.")
+        notes.append("Run with --allow-dirty. Working tree has uncommitted tracked changes; the clone contains only the committed state.")
     failed = False
     comparison = ""
     summary = ""
@@ -84,7 +89,13 @@ def main() -> int:
             print(comparison, flush=True)
     if steps_ok:
         code, out = run(["uv", "run", "pytest"], dest, log)
-        summary = next((ln for ln in reversed(out.splitlines()) if " passed" in ln or " failed" in ln or " error" in ln), "(no summary line)")
+        summary = next((ln for ln in reversed(out.splitlines()) if " passed" in ln or " failed" in ln or " error" in ln), "")
+        if not summary:
+            summary = "(no summary line)"
+            failed = True
+        elif " skipped" in summary:
+            notes.append(f"tests were skipped, treated as FAIL: {summary}")
+            failed = True
         failed |= code != 0
     failed |= not steps_ok or any(s["code"] != 0 for s in log)
 
