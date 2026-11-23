@@ -74,3 +74,23 @@ def test_dense_script_writes_both_arms(dense, monkeypatch, tmp_path):
         ("forced1", "strong", ""), ("forced1", "orient", ""),
         ("noise", "strong", "0.05"), ("noise", "orient", "0.05"), ("noise", "strong", "0.1"), ("noise", "orient", "0.1")]
     assert all(r["seed"] == "3" and r["commit"] == "c0ffee" and r["n"] == "20" for r in rows)
+
+
+def test_puzzle_script_exits_non_zero_on_a_contradiction(puzzle, monkeypatch, tmp_path):
+    from jigsaw.experiment import sweep
+    from jigsaw.types import Read
+    monkeypatch.setattr(puzzle, "tree_is_dirty", lambda: False)
+    monkeypatch.setattr(sweep, "decode_grid", lambda cells, mask, table: Read(6, 4, 3))
+    out, findings = tmp_path / "p.csv", tmp_path / "findings"
+    code = puzzle.main(["--seed", "1", "--n", "2", "--out", str(out), "--workers", "1", "--findings", str(findings)])
+    assert code != 0 and not out.exists() and list(findings.glob("puzzle_strong_grid_*.png"))
+
+
+def test_dense_script_exits_non_zero_on_a_contradiction(dense, monkeypatch, tmp_path):
+    from jigsaw.experiment import contrast
+    from jigsaw.types import Position
+    monkeypatch.setattr(dense, "tree_is_dirty", lambda: False)
+    monkeypatch.setattr(contrast, "decode_single", lambda window, table: Position(5, 5, 3))
+    out, findings = tmp_path / "d.csv", tmp_path / "findings"
+    assert dense.main(["--seed", "1", "--n", "5", "--out", str(out), "--findings", str(findings)]) != 0
+    assert not out.exists() and list(findings.glob("dense_strong_forced1_*.npz"))

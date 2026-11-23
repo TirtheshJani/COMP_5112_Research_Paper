@@ -3,7 +3,15 @@ import numpy as np
 import pytest
 
 from jigsaw.decode import build_table, decode_grid
-from jigsaw.experiment.runner import classify, decide_single, misread_cells, truth_raster
+from jigsaw.experiment.runner import (
+    Contradiction,
+    classify,
+    decide_single,
+    misread_cells,
+    run_units,
+    save_finding,
+    truth_raster,
+)
 from jigsaw.geometry import visible_cells
 from jigsaw.patch import back_grid
 from jigsaw.render import LINE_GRAY, photograph, piece_back
@@ -155,3 +163,37 @@ def test_misread_cells_counts_a_point_off_the_raster_as_misread(clean_shot):
     gr, M, truth = clean_shot
     shift = np.array([[1, 0, 5000], [0, 1, 0], [0, 0, 1]], float)   # every centre lands far outside
     assert misread_cells(GridRead(gr.cells, gr.mask, shift @ gr.H), M, truth) == int(gr.mask.sum())
+
+
+# run_units and E9 --------------------------------------------------------------------------------
+
+def fake_unit(pattern, wrong_le1):
+    return [{"pattern": pattern, "decoder": "single", "wrong_le1_misread": wrong_le1}]
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_run_units_keeps_order(workers):
+    rows = run_units(fake_unit, [("strong", 0), ("orient", 3), ("strong", 0)], workers)
+    assert [(r["pattern"], r["wrong_le1_misread"]) for r in rows] == [("strong", 0), ("orient", 3), ("strong", 0)]
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_run_units_stops_on_a_strong_contradiction(workers):
+    with pytest.raises(Contradiction) as e:
+        run_units(fake_unit, [("orient", 2), ("strong", 1), ("strong", 0)], workers)
+    assert [r["pattern"] for r in e.value.rows] == ["strong"]
+
+
+def test_save_finding_writes_frame_and_cells(tmp_path):
+    img = np.zeros((20, 30, 3), np.uint8)
+    paths = save_finding(tmp_path / "findings", "puzzle_strong_single_trial3", image=img,
+                         cells=np.ones((4, 4), np.uint8), truth=[1, 2, 3])
+    names = sorted(p.name for p in paths)
+    assert names == ["puzzle_strong_single_trial3.npz", "puzzle_strong_single_trial3.png"]
+    z = np.load(tmp_path / "findings" / "puzzle_strong_single_trial3.npz")
+    assert z["cells"].shape == (4, 4) and list(z["truth"]) == [1, 2, 3] and "image" not in z
+
+
+def test_save_finding_without_a_frame(tmp_path):
+    paths = save_finding(tmp_path, "dense_strong", cells=np.zeros((3, 3), np.uint8))
+    assert [p.suffix for p in paths] == [".npz"]

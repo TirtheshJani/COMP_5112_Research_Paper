@@ -1,6 +1,7 @@
 """sweep.run_puzzle: rendered puzzle rows (S2 E2, E3, E8, E11)."""
 import csv
 
+import numpy as np
 import pytest
 
 from jigsaw.experiment.runner import COLUMNS, write_csv
@@ -76,3 +77,27 @@ def test_write_csv_ends_with_seed_and_commit(tmp_path, rows50):
         got = list(csv.reader(f))
     assert got[0] == COLUMNS and COLUMNS[-2:] == ["seed", "commit"]
     assert len(got) == 1 + len(rows50) and all(line[-2:] == ["7", "abc123"] for line in got[1:])
+
+
+def test_a_strong_contradiction_saves_the_frame_and_stops(monkeypatch, tmp_path):
+    from jigsaw.experiment import sweep
+    from jigsaw.experiment.runner import Contradiction
+    from jigsaw.types import Read
+    monkeypatch.setattr(sweep, "decode_grid", lambda cells, mask, table: Read(6, 4, 3))   # a synthetic wrong decoder
+    with pytest.raises(Contradiction) as e:
+        sweep.run_puzzle([BASE], 3, seed=7, findings_dir=tmp_path)
+    assert {(r["pattern"], r["decoder"]) for r in e.value.rows} == {("strong", "grid")}
+    names = sorted(p.name for p in tmp_path.iterdir())
+    assert names and all(n.startswith("puzzle_strong_grid_") for n in names)
+    assert {n.rsplit(".", 1)[1] for n in names} == {"npz", "png"}
+    z = np.load(next(tmp_path.glob("*.npz")))
+    assert {"cells", "mask", "H", "M", "truth", "decision", "misread"} <= set(z.files)
+
+
+def test_no_findings_saved_for_the_control(monkeypatch, tmp_path):
+    from jigsaw.experiment import sweep
+    from jigsaw.types import Read
+    monkeypatch.setattr(sweep, "PATTERN_NAMES", ("orient",))
+    monkeypatch.setattr(sweep, "decode_grid", lambda cells, mask, table: Read(6, 4, 3))
+    rows = sweep.run_puzzle([BASE], 3, seed=7, findings_dir=tmp_path)
+    assert any(r["wrong_le1_misread"] > 0 for r in rows) and not list(tmp_path.iterdir())

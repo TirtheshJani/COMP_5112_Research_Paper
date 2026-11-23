@@ -9,11 +9,12 @@ misread_cells: count visible cells whose read bit differs from the printed cell 
                pixel -> truth_raster.
 
 Also the shared plumbing of both experiments: the CSV schema (CONTRACTS.md section 6), git provenance, and
-run_units, which runs independent units serially or in a process pool with the same result.
+run_units, which runs independent units serially or in a process pool with the same result and raises
+Contradiction (E9) when a strong row has a wrong read with at most one misread cell.
 """
 import csv
 import subprocess
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Literal
 
@@ -54,16 +55,51 @@ def write_csv(path, rows: list[dict], commit: str) -> None:
             w.writerow({**row, "commit": commit})
 
 
+class Contradiction(RuntimeError):
+    """E9: a strong-pattern row has a wrong read with at most one misread cell."""
+
+    def __init__(self, rows: list[dict]):
+        super().__init__(f"E9: strong rows with wrong_le1_misread > 0: {rows}")
+        self.rows = rows
+
+
+def save_finding(folder, tag: str, image: np.ndarray | None = None, **arrays) -> list[Path]:
+    """Write the frame (tag.png, if given) and everything else (tag.npz) for an E9 finding."""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    paths = [folder / f"{tag}.npz"]
+    np.savez_compressed(paths[0], **{k: np.asarray(v) for k, v in arrays.items()})
+    if image is not None:
+        paths.append(folder / f"{tag}.png")
+        cv2.imwrite(str(paths[1]), image)
+    return paths
+
+
+def _check(rows: list[dict]) -> list[dict]:
+    bad = [r for r in rows if r["pattern"] == "strong" and r["wrong_le1_misread"] > 0]
+    if bad:
+        raise Contradiction(bad)
+    return rows
+
+
 def run_units(fn, args: list[tuple], workers: int = 1) -> list[dict]:
     """fn(*a) for every a in args, each returning a list of rows; rows come back in args order.
 
-    fn must be a module-level function so that worker processes can import it (Windows spawns).
+    Raises Contradiction (E9) as soon as a finished unit has a strong row with wrong_le1_misread > 0; pending
+    units are cancelled. fn must be a module-level function so that worker processes can import it.
     """
     if workers <= 1:
-        results = [fn(*a) for a in args]
+        results = [_check(fn(*a)) for a in args]
     else:
         with ProcessPoolExecutor(workers) as ex:
-            results = list(ex.map(fn, *zip(*args)))
+            futures = [ex.submit(fn, *a) for a in args]
+            try:
+                for f in as_completed(futures):
+                    _check(f.result())
+            except BaseException:
+                ex.shutdown(wait=True, cancel_futures=True)
+                raise
+            results = [f.result() for f in futures]
     return [row for rows in results for row in rows]
 
 
