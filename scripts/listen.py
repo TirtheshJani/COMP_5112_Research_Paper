@@ -15,6 +15,7 @@ class _MicIn:
         import sounddevice as sd
 
         self._q: queue.Queue = queue.Queue()
+        # UNVERIFIED: sounddevice docs (InputStream callback signature, blocksize); not run here
         self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=1600, callback=self._cb)
         self._stream.start()
 
@@ -33,6 +34,7 @@ def main() -> None:
     ap.parse_args()
     logging.basicConfig(level=logging.INFO)
     listener = CommandListener(_MicIn(), is_muted=lambda: False)
+    listener.warm()
     print("listening; Ctrl-C to quit")
     while True:
         cmd = listener.poll()

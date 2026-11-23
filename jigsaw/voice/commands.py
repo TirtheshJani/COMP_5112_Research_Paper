@@ -6,11 +6,11 @@ from typing import Literal
 
 Command = Literal["ask", "again", "next", "stop"]
 
-# Checked in order; the multi-word phrases come first so "say that again" is not read as anything else.
+# Checked in order; stop wins over everything, so "stop saying that again" stops.
 _TABLE: tuple[tuple[Command, tuple[str, ...]], ...] = (
+    ("stop", ("that s enough", "thats enough", "stop")),
     ("again", ("say that again", "again", "repeat")),
     ("next", ("next piece", "next")),
-    ("stop", ("that s enough", "thats enough", "stop")),
     ("ask", ("where does this go", "where does it go", "where")),
 )
 

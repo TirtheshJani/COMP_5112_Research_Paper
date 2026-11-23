@@ -14,15 +14,7 @@ def test_all_sentences_count():
     assert len(set(s)) == len(s)
 
 
-def test_import_does_not_load_piper():
-    import sys
-
-    assert "piper" not in sys.modules
-    assert "onnxruntime" not in sys.modules or tts._voice is None
-
-
 def test_missing_voice_is_a_clear_error(monkeypatch, tmp_path):
-    pytest.importorskip("piper")
     monkeypatch.setenv("JIGSAW_PIPER_VOICE", str(tmp_path / "none.onnx"))
     monkeypatch.setattr(tts, "_voice", None)
     with pytest.raises(FileNotFoundError):

@@ -18,6 +18,7 @@ from jigsaw.voice.commands import match_command
         ("that's enough", "stop"),
         ("Thats enough", "stop"),
         ("  STOP,  ", "stop"),
+        ("stop saying that again", "stop"),
     ],
 )
 def test_match(text, cmd):
@@ -34,7 +35,7 @@ def test_voice_modules_import_without_extras():
     import sys
 
     code = (
-        "import sys, jigsaw.voice.phrases, jigsaw.voice.commands; "
-        "assert not {'piper', 'faster_whisper', 'onnxruntime'} & set(sys.modules)"
+        "import sys, jigsaw.voice.phrases, jigsaw.voice.commands, jigsaw.voice.tts, jigsaw.voice.stt; "
+        "assert not {'piper', 'faster_whisper', 'onnxruntime', 'sounddevice'} & set(sys.modules)"
     )
     subprocess.run([sys.executable, "-c", code], check=True)

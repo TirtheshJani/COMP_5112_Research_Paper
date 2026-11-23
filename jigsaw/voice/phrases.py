@@ -3,8 +3,11 @@ from __future__ import annotations
 
 from jigsaw.types import Read
 
-# S6 confirms these on real pieces. The wording was given by the S4 prompt; the spec's design notes
-# derive "counter-clockwise / clockwise" and this table uses "left / right" instead.
+# Derivation: turn = k means the camera sees the back rotated k quarter turns counter-clockwise from upright.
+# To make it upright the person rotates it k quarter turns clockwise as seen from the back, which is k quarter
+# turns counter-clockwise as seen from the picture side. Wording: the spec's design notes say
+# "counter-clockwise / clockwise"; the author's S4 prompt chose "to the left / to the right" instead, and that is used here.
+# S6 confirms these on real pieces; until then they are unconfirmed physically.
 TURN_SENTENCE: dict[int, str] = {
     0: "It is the right way up.",
     1: "Turn it a quarter turn to the left.",

@@ -33,11 +33,11 @@ def all_sentences() -> list[str]:
 def _load():
     global _voice
     if _voice is None:
-        from piper import PiperVoice  # UNVERIFIED: API from piper-tts >= 1.3 and ../rocky_mini/server/app.py:170-176
-
         path = voice_path()
         if not path.exists():
             raise FileNotFoundError(f"Piper voice not found: {path}. See assets/voice/README.md")
+        from piper import PiperVoice  # UNVERIFIED: API from piper-tts >= 1.3 and ../rocky_mini/server/app.py:170-176
+
         _voice = PiperVoice.load(str(path))
         log.info("loaded Piper voice %s", path)
     return _voice
@@ -51,6 +51,9 @@ def _render(text: str) -> tuple[np.ndarray, int]:
         raise RuntimeError(f"Piper returned no audio for {text!r}")
     rate = chunks[0][1]
     pcm = np.concatenate([np.asarray(a, dtype=np.float32).reshape(-1) for a, _ in chunks])
+    peak = float(np.abs(pcm).max())
+    if peak > 1.0:
+        log.warning("clipping %r: peak %.3f", text, peak)
     return np.clip(pcm, -1.0, 1.0).astype(np.float32), rate
 
 
