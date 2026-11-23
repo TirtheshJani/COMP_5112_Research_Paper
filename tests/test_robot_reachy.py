@@ -313,6 +313,39 @@ def test_connect_without_camera_frames_fails_with_the_same_advice(monkeypatch):
     assert made[0].exited == 1                                               # robot released
 
 
+def test_connect_drains_stale_frames_and_audio_before_returning(monkeypatch):
+    stale_audio = [np.full((320, 2), 0.1, np.float32) for _ in range(3)]
+    media = StubMedia(frames=[img(k) for k in range(5)], audio=stale_audio)
+    _fake_sdk(monkeypatch, lambda **kw: StubMini(media))
+    robot = connect()
+    assert media.frames == [] and media.audio == []
+    assert robot.read() is None
+
+
+class EndlessMedia(StubMedia):
+    """An SDK that never returns None: a new frame and an audio chunk on every call."""
+
+    def __init__(self):
+        super().__init__()
+        self.frame_reads = self.audio_reads = 0
+
+    def get_frame(self):
+        self.frame_reads += 1
+        return img(self.frame_reads % 256)
+
+    def get_audio_sample(self):
+        self.audio_reads += 1
+        return np.zeros((320, 2), np.float32)
+
+
+def test_connect_drain_is_bounded_when_the_sdk_never_returns_none(monkeypatch):
+    media = EndlessMedia()
+    _fake_sdk(monkeypatch, lambda **kw: StubMini(media))
+    connect()
+    assert 1 < media.frame_reads <= 1 + reachy.DRAIN_MAX_READS          # 1 = the first frame connect waits for
+    assert 0 < media.audio_reads <= reachy.DRAIN_MAX_READS
+
+
 def test_connect_passes_host_and_returns_a_robot(monkeypatch):
     seen = []
 
