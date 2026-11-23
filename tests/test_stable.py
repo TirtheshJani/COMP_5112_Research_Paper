@@ -75,10 +75,19 @@ def test_no_give_up_after_an_announcement():
     assert feed(s, [MISS] * 30) == [None] * 30
 
 
-def test_the_announced_piece_shown_again_is_known_and_not_given_up():
+def test_the_same_piece_after_an_empty_view_is_announced_again():
+    # once per presentation (S6 goal 2); the v1 plan's test_same_piece_again_after_it_left_view
     s = Stable()
     feed(s, [A, A, A, NONE])
-    assert feed(s, [A, A, A] + [MISS] * 30) == [None] * 33
+    assert feed(s, [A, A, A] + [MISS] * 30) == [None, None, "announce"] + [None] * 30
+    assert s.last == A
+
+
+def test_a_stable_read_after_a_give_up_is_announced():
+    # the give-up asks to be shown the piece again; a read that settles in the same presentation (a finger
+    # moved away) is announced, and it still needs `need` equal reads
+    s = Stable()
+    assert feed(s, [MISS] * 15 + [A, A, A]) == [None] * 14 + ["give_up", None, None, "announce"]
 
 
 def test_need_and_miss_limit_are_parameters():
