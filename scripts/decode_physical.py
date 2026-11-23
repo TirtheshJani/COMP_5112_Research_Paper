@@ -87,7 +87,10 @@ def decode_folder(frames_dir: str | Path, commit: str, undistort: bool = False) 
     for folder in sorted(p for p in frames_dir.iterdir() if p.is_dir() and not p.name.endswith(".partial")):
         for side_path in sorted(folder.glob("f*.json"), key=lambda p: int(p.stem[1:])):
             side = json.loads(side_path.read_text())
-            image = cv2.imread(str(side_path.with_suffix(".png")), cv2.IMREAD_COLOR)
+            png = side_path.with_suffix(".png")
+            image = cv2.imread(str(png), cv2.IMREAD_COLOR)
+            if image is None:   # a capture fault, not a decoder rejection: it must not enter the counts
+                raise ValueError(f"cannot read {png}; delete {folder} and run run_physical.py again to capture it")
             if undistort and side["K"] is not None:
                 image = undistort_image(image, np.array(side["K"]), np.array(side["D"] or np.zeros(5)))
             d = reader.read(image)
@@ -191,20 +194,25 @@ def summary(rows: list[dict], flags: list[dict], sim: list[dict] | None, frames_
     lines += ["", "## Prediction 4: robot against simulation", ""]
     px = [r["px_per_cell"] for r in primary if r["px_per_cell"] is not None]
     rows_sim = [s for s in sim or [] if s["pattern"] == "strong" and s["decoder"] == "grid"]
+    compared = right(primary)
     if sim is None:
         lines.append(f"{sim_path} not found: prediction 4 not evaluated.")
-    elif not px or not rows_sim:
-        lines.append("No primary frame with a grid, or no strong-pattern grid-decoder row in the simulation: not evaluated.")
+    elif not px or not rows_sim or not compared:
+        lines.append("No primary frame with a grid, no primary frame at a multiple of 90 degrees, or no strong-pattern "
+                     "grid-decoder row in the simulation: not evaluated.")
     else:
         robot_px = statistics.median(px)
         nearest = min({float(s["px_per_cell"]) for s in rows_sim}, key=lambda v: abs(v - robot_px))
-        n, k = _counts(primary)
+        n, k = _counts(compared)
         robot = {x: k[x] / n for x in ("correct", "rejected", "wrong")}
         lines += [f"Robot px per cell (median over primary frames with a grid): {robot_px:.2f}. "
                   f"Nearest simulated px per cell: {nearest:g} ({sim_path}, pattern strong, decoder grid). "
                   "The robot's noise level is not measured, so every simulated condition at that px per cell is listed.", "",
-                  f"Robot, primary frames, all angles: correct {_share(k['correct'], n)}, rejected {_share(k['rejected'], n)}, "
-                  f"wrong {_share(k['wrong'], n)}.", "",
+                  "Only nominal angles that are multiples of 90 are compared: there the robot, like the simulation, counts "
+                  "one quarter turn as correct. At odd multiples of 45 the robot accepts either adjacent turn, which the "
+                  "simulation never does.", "",
+                  f"Robot, primary frames at nominal angles that are multiples of 90 ({n} presentations): correct "
+                  f"{_share(k['correct'], n)}, rejected {_share(k['rejected'], n)}, wrong {_share(k['wrong'], n)}.", "",
                   "| px per cell | tilt | blur | noise | finger | n | correct | rejected | wrong | robot inside the interval "
                   "(correct, rejected, wrong) |", "|---|---|---|---|---|---|---|---|---|---|"]
         for s in rows_sim:

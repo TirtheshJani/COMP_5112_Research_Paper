@@ -307,6 +307,9 @@ def test_decode_physical_writes_csv_summary_and_findings(captured, dp, tmp_path,
     assert code == 2                                                           # wrong reads present
     assert "WRONG READ: r2_c2_a000/f3.png" in capsys.readouterr().out
     text = summary.read_text()
+    # prediction 4 compares only multiples of 90, where the robot like the simulation accepts one turn:
+    # 35 primary frames at angle 0, one of them wrong (r1_c1_a000 shown upside down)
+    assert "Robot, primary frames at nominal angles that are multiples of 90 (35 presentations): correct 34 (0.971" in text
     for needle in ["70 presentations", "Undistortion: off", "Prediction 1", "Prediction 4", "Nearest simulated px per cell: 12",
                    "| r0_c0_a045 | piece | row 7, column 5 |", "| r1_c1_a000 | angle |", "r2_c2_a000/f3.png"]:
         assert needle in text, needle
@@ -320,6 +323,15 @@ def test_decode_physical_refuses_a_dirty_tree_without_allow_dirty(dp, monkeypatc
     monkeypatch.setattr(dp, "git", lambda *args: " M jigsaw/app.py" if args[0] == "status" else "abc1234")
     assert dp.main(["--frames", str(tmp_path), "--out", str(tmp_path / "x.csv")]) == 1
     assert not (tmp_path / "x.csv").exists()
+
+
+def test_an_unreadable_frame_stops_the_decode_and_names_the_file(dp, tmp_path):
+    # a missing or corrupt PNG is a capture fault, not a decoder rejection: it must not enter the counts
+    op = Operator()
+    protocol.capture(op, tmp_path, op.prompt, op.beep, pieces=[(3, 2)], angles=(90,))
+    (tmp_path / "r3_c2_a090" / "f2.png").write_bytes(b"not a png")
+    with pytest.raises(ValueError, match=r"r3_c2_a090.f2\.png"):
+        dp.decode_folder(tmp_path, commit="x")
 
 
 def test_decode_with_undistort_reads_the_saved_intrinsics(dp, tmp_path):
