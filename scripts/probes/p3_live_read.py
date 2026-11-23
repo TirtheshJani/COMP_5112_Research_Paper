@@ -6,7 +6,7 @@
 Hold a printed piece grid-side up over the green reading mat (any strongly coloured card works).
 Every frame is read and decoded; the script prints each change of decision ("R4 C2 turn 1" or the
 reject reason), saves frames with a Read to results/probes/reads/, and ends with counts.
-A Read whose row and column are wrong is a finding (CLAUDE.md rule 6): note the piece, keep the frame.
+A Read whose row and column are wrong is a finding (CLAUDE.md rule 5): note the piece, keep the frame.
 """
 import argparse
 import time

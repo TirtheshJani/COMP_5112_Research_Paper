@@ -1615,7 +1615,7 @@ requires-dist = [
     { name = "piper-tts", marker = "extra == 'voice'", specifier = ">=1.3" },
     { name = "pypdfium2", marker = "extra == 'print'", specifier = ">=4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "reachy-mini", marker = "extra == 'robot'" },
+    { name = "reachy-mini", marker = "extra == 'robot'", specifier = "==1.15.0" },
     { name = "reportlab", marker = "extra == 'print'", specifier = ">=4" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "scipy", marker = "extra == 'experiment'", specifier = ">=1.14" },

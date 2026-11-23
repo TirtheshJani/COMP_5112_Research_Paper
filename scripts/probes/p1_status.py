@@ -4,7 +4,7 @@
 
 Prints the daemon status and the camera specs as JSON. Exit code 0 when both answer.
 Endpoints read from the SDK source (reachy-mini 1.15.0: /api/daemon/status, /api/camera/specs);
-UNVERIFIED on the robot until this probe has run.
+both answered on the robot (results/probes/p1.txt, 23 Nov 2026).
 """
 import argparse
 import json

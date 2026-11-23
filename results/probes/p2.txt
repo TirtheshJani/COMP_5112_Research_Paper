@@ -1,0 +1,31 @@
+ERROR:reachy_mini.media.audio_control_utils:No Reachy Mini Audio USB device found!
+INFO:reachy_mini.media.webrtc_client_gstreamer:GstWebRTCClient initialized (bidirectional audio support)
+camera: GstWebRTCClient
+resolution: (1280, 720)
+K: [[667.26921422   0.         635.29201994]
+ [  0.         556.41052461 368.97888105]
+ [  0.           0.           1.        ]]
+D: [-1.46523203e+00  6.54271413e-01  1.21478093e-02 -2.67728646e-03
+  3.03593994e-01 -1.43008091e+00  5.70024083e-01  3.56729924e-01
+  3.05736335e-03  3.35761401e-04 -9.89712639e-03 -2.05091948e-03]
+INFO:reachy_mini.media.webrtc_client_gstreamer:Captured webrtcbin: webrtcbin0
+INFO:reachy_mini.media.webrtc_client_gstreamer:Transceiver configured for SENDRECV
+INFO:reachy_mini.media.webrtc_client_gstreamer:Transceiver configured for SENDRECV
+INFO:reachy_mini.media.webrtc_client_gstreamer:Setting up audio send chain...
+INFO:reachy_mini.media.webrtc_client_gstreamer:Found audio sink pad: sink_1, pt=100
+INFO:reachy_mini.media.webrtc_client_gstreamer:Audio send chain ready (bidirectional audio enabled)
+first frame after 1.53 s: (720, 1280, 3) uint8
+saved frame_1795448424_0001.png  channel means (0, 1, 2) = [0.4 0.1 0.1]
+saved frame_1795448424_0016.png  channel means (0, 1, 2) = [ 94.7 107.1 111.4]
+saved frame_1795448425_0031.png  channel means (0, 1, 2) = [ 94.8 107.2 111.6]
+saved frame_1795448425_0046.png  channel means (0, 1, 2) = [ 95.2 107.5 112. ]
+saved frame_1795448426_0061.png  channel means (0, 1, 2) = [ 95.5 107.8 112.3]
+saved frame_1795448427_0076.png  channel means (0, 1, 2) = [ 96.  108.2 112.5]
+saved frame_1795448427_0091.png  channel means (0, 1, 2) = [ 97.  108.7 113.1]
+saved frame_1795448428_0106.png  channel means (0, 1, 2) = [ 97.5 109.2 113.6]
+saved frame_1795448429_0121.png  channel means (0, 1, 2) = [ 97.8 109.7 114.2]
+saved frame_1795448429_0136.png  channel means (0, 1, 2) = [ 98.2 110.  114.6]
+saved frame_1795448430_0151.png  channel means (0, 1, 2) = [ 98.7 109.  113.7]
+saved frame_1795448431_0166.png  channel means (0, 1, 2) = [ 90.1 100.5 103.2]
+saved frame_1795448431_0181.png  channel means (0, 1, 2) = [ 90.1 100.7 103.5]
+194 frames in 10 s (19.4 fps), 13 saved to C:\Users\TJ\Documents\GitHub\COMP_5112_Research_Paper\.worktrees\s3-robot\results\probes
