@@ -9,9 +9,11 @@ make_figures.py, decode_physical.py. Add them to STEPS when their workstreams ar
 """
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +21,40 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 REPRO = ROOT / "results" / "_repro"
 PDF = "print/reachy_debruijn_jigsaw.pdf"
+
+# Skip reasons a clean clone is allowed to show. Substring match on the reason text pytest prints with -rs.
+# Anything else, including a missing optional extra, makes the run FAIL.
+EXPECTED_SKIPS = (
+    # assets/voice/ is git-ignored, so a clone never has the Piper voice file (tests/test_voice_tts.py).
+    "Piper voice file absent",
+    # Tests that drive the robot are gated on JIGSAW_LIVE=1 and cannot run in a clone.
+    "JIGSAW_LIVE=1",
+    # Tests that need the robot hardware itself.
+    "requires the robot",
+)
+_SKIP_LINE = re.compile(r"^SKIPPED \[(\d+)\] (.+?:\d+): (.*)$")
+_SUMMARY = re.compile(r"\d+ (passed|failed|error)")
+
+
+def classify_pytest(out: str) -> tuple[str, list[tuple[str, str, int, bool]], bool]:
+    """Parse pytest -rs output into (summary line, skips, ok). A skip is (location, reason, count, expected).
+    ok is False with no summary line, any failure or error, or any skip whose reason is not in EXPECTED_SKIPS."""
+    lines = out.splitlines()
+    summary = next((ln for ln in reversed(lines) if _SUMMARY.search(ln)), "(no summary line)")
+    skips = []
+    for ln in lines:
+        m = _SKIP_LINE.match(ln.strip())
+        if m:
+            reason = m.group(3)
+            skips.append((m.group(2), reason, int(m.group(1)), any(e in reason for e in EXPECTED_SKIPS)))
+    ok = summary != "(no summary line)" and not re.search(r"\d+ (failed|error)", summary) and all(s[3] for s in skips)
+    return summary, skips, ok
+
+
+def extras_to_sync() -> list[str]:
+    """Every optional extra in pyproject.toml except robot, as uv sync arguments."""
+    extras = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["optional-dependencies"]
+    return [a for name in extras if name != "robot" for a in ("--extra", name)]
 
 
 def run(cmd: list[str], cwd: Path, log: list[dict]) -> tuple[int, str]:
@@ -72,13 +108,14 @@ def main() -> int:
     failed = False
     comparison = ""
     summary = ""
+    skips: list[tuple[str, str, int, bool]] = []
 
     code, _ = run(["git", "clone", "--no-hardlinks", "-q", str(ROOT), str(dest)], ROOT, log)
     steps_ok = code == 0
     if steps_ok:
         steps_ok = run(["git", "checkout", "-q", commit], dest, log)[0] == 0
     if steps_ok:
-        steps_ok = run(["uv", "sync", "--extra", "dev", "--extra", "print"], dest, log)[0] == 0
+        steps_ok = run(["uv", "sync", *extras_to_sync()], dest, log)[0] == 0
     if steps_ok:
         out_pdf = dest / "rebuilt" / "reachy_debruijn_jigsaw.pdf"
         out_pdf.parent.mkdir()
@@ -88,14 +125,9 @@ def main() -> int:
             failed |= not same
             print(comparison, flush=True)
     if steps_ok:
-        code, out = run(["uv", "run", "pytest"], dest, log)
-        summary = next((ln for ln in reversed(out.splitlines()) if " passed" in ln or " failed" in ln or " error" in ln), "")
-        if not summary:
-            summary = "(no summary line)"
-            failed = True
-        elif " skipped" in summary:
-            notes.append(f"tests were skipped, treated as FAIL: {summary}")
-            failed = True
+        code, out = run(["uv", "run", "pytest", "-rs"], dest, log)
+        summary, skips, ok = classify_pytest(out)
+        failed |= not ok
         failed |= code != 0
     failed |= not steps_ok or any(s["code"] != 0 for s in log)
 
@@ -103,6 +135,9 @@ def main() -> int:
     lines += [f"Result: {'FAIL' if failed else 'PASS'}", ""]
     lines += [f"PDF comparison: {comparison or 'not run'}", f"pytest summary: {summary or 'not run'}", ""]
     lines += [f"Note: {n}" for n in notes]
+    lines += ["", "## Skipped tests", ""]
+    lines += [f"- {n} x {loc}: {reason} ({'expected' if exp else 'UNEXPECTED, run fails'})" for loc, reason, n, exp in skips] or ["- none"]
+    lines += [""]
     lines += ["Not covered: run_sim_dense.py, run_sim_puzzle.py, make_figures.py, decode_physical.py (not in the repository at this commit).",
               "print/reachy_debruijn_jigsaw_preview.png is not regenerated: no script in the repository produces it.", "", "## Commands", ""]
     for s in log:
