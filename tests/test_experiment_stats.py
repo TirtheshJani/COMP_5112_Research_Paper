@@ -1,11 +1,11 @@
-"""stats.wilson against statsmodels (S2 E7). statsmodels is a test-only dependency."""
+"""stats.wilson against statsmodels (S2 E7). statsmodels is a test-only dependency (experiment extra); without it
+this file fails to import on purpose, so the only check on wilson cannot vanish as a skip."""
 import math
 
 import pytest
+from statsmodels.stats import proportion
 
 from jigsaw.experiment.stats import wilson
-
-proportion = pytest.importorskip("statsmodels.stats.proportion")
 
 
 def alpha_of(z):

@@ -4,6 +4,7 @@ import pytest
 
 from jigsaw.decode import build_table, decode_grid
 from jigsaw.experiment.runner import (
+    OFF_GRID,
     Contradiction,
     classify,
     decide_single,
@@ -138,7 +139,7 @@ def clean_shot():
 def test_misread_cells_is_zero_on_a_clean_read(clean_shot):
     gr, M, truth = clean_shot
     assert gr.mask.sum() >= 25
-    assert misread_cells(gr, M, truth) == 0
+    assert misread_cells(gr, M, truth) == (0, 0)
 
 
 def test_misread_cells_counts_a_known_flip(clean_shot):
@@ -146,9 +147,9 @@ def test_misread_cells_counts_a_known_flip(clean_shot):
     ys, xs = np.nonzero(gr.mask)
     cells = gr.cells.copy()
     cells[ys[7], xs[7]] ^= 1
-    assert misread_cells(GridRead(cells, gr.mask, gr.H), M, truth) == 1
+    assert misread_cells(GridRead(cells, gr.mask, gr.H), M, truth) == (1, 0)
     cells[ys[20], xs[20]] ^= 1
-    assert misread_cells(GridRead(cells, gr.mask, gr.H), M, truth) == 2
+    assert misread_cells(GridRead(cells, gr.mask, gr.H), M, truth) == (2, 0)
 
 
 def test_misread_cells_ignores_cells_outside_the_mask(clean_shot):
@@ -156,13 +157,31 @@ def test_misread_cells_ignores_cells_outside_the_mask(clean_shot):
     ys, xs = np.nonzero(~gr.mask)
     cells = gr.cells.copy()
     cells[ys, xs] ^= 1
-    assert misread_cells(GridRead(cells, gr.mask, gr.H), M, truth) == 0
+    assert misread_cells(GridRead(cells, gr.mask, gr.H), M, truth) == (0, 0)
 
 
-def test_misread_cells_counts_a_point_off_the_raster_as_misread(clean_shot):
+def test_misread_cells_counts_cells_off_the_raster_as_unknown_not_misread(clean_shot):
     gr, M, truth = clean_shot
     shift = np.array([[1, 0, 5000], [0, 1, 0], [0, 0, 1]], float)   # every centre lands far outside
-    assert misread_cells(GridRead(gr.cells, gr.mask, shift @ gr.H), M, truth) == int(gr.mask.sum())
+    assert misread_cells(GridRead(gr.cells, gr.mask, shift @ gr.H), M, truth) == (0, int(gr.mask.sum()))
+
+
+def test_a_single_flip_counts_one_misread_beside_unprinted_cells(clean_shot):
+    """Left third of the raster has no printed bit. Flipping a cell there changes nothing; flipping any other
+    visible cell gives exactly one misread. Unprinted cells must never push a single flip out of the <= 1 bucket."""
+    gr, M, truth = clean_shot
+    part = truth.copy()
+    part[:, : part.shape[1] // 3] = OFF_GRID
+    misread, unknown = misread_cells(gr, M, part)
+    assert misread == 0 and 0 < unknown < gr.mask.sum()
+    ys, xs = np.nonzero(gr.mask)
+    got = []
+    for y, x in zip(ys, xs):
+        cells = gr.cells.copy()
+        cells[y, x] ^= 1
+        got.append(misread_cells(GridRead(cells, gr.mask, gr.H), M, part))
+    assert got.count((0, unknown)) == unknown
+    assert got.count((1, unknown)) == len(ys) - unknown
 
 
 # run_units and E9 --------------------------------------------------------------------------------

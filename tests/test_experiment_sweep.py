@@ -1,5 +1,6 @@
 """sweep.run_puzzle: rendered puzzle rows (S2 E2, E3, E8, E11)."""
 import csv
+import logging
 
 import numpy as np
 import pytest
@@ -92,6 +93,72 @@ def test_a_strong_contradiction_saves_the_frame_and_stops(monkeypatch, tmp_path)
     assert {n.rsplit(".", 1)[1] for n in names} == {"npz", "png"}
     z = np.load(next(tmp_path.glob("*.npz")))
     assert {"cells", "mask", "H", "M", "truth", "decision", "misread"} <= set(z.files)
+
+
+@pytest.fixture
+def one_flip_unprinted(monkeypatch):
+    """Truth rasters with the printed cell under the raster centre inverted (a hand-built single misread) and no
+    printed bit in the left third (visible cells there are unknown, as if they fell off the grid)."""
+    from jigsaw import types as T
+    from jigsaw.experiment import sweep
+    from jigsaw.experiment.runner import OFF_GRID, truth_raster
+    rows, cols = np.mgrid[: T.GRID_ROWS, : T.GRID_COLS]
+    real = sweep.piece
+
+    def piece(r, c, px, name):
+        gray, alpha, truth = real(r, c, px, name)
+        h, w = truth.shape
+        a, b = (truth_raster(r, c, px, truth.shape, grid=g) for g in (rows, cols))   # G row and col per pixel
+        truth = truth.copy()
+        truth[(a == a[h // 2, w // 2]) & (b == b[h // 2, w // 2])] ^= 1
+        truth[:, : w // 3] = OFF_GRID
+        return gray, alpha, truth
+
+    monkeypatch.setattr(sweep, "piece", piece)
+
+
+def test_a_wrong_read_with_one_misread_beside_unprinted_cells_trips_e9(one_flip_unprinted, monkeypatch, tmp_path):
+    from jigsaw.experiment import sweep
+    from jigsaw.experiment.runner import Contradiction
+    from jigsaw.types import Read
+    monkeypatch.setattr(sweep, "decode_grid", lambda cells, mask, table: Read(6, 4, 3))   # a synthetic wrong decoder
+    with pytest.raises(Contradiction):
+        sweep.run_puzzle([BASE], 3, seed=7, findings_dir=tmp_path)
+    found = []
+    for p in tmp_path.glob("*.npz"):
+        with np.load(p) as z:
+            found.append((int(z["misread"]), int(z["unknown"])))
+    assert found and all(m == 1 and u > 0 for m, u in found), found
+
+
+def test_unprinted_cells_are_logged_and_not_counted(one_flip_unprinted, caplog):
+    from jigsaw.experiment import sweep
+    with caplog.at_level(logging.WARNING, logger="jigsaw.experiment.sweep"):
+        rows = sweep.run_puzzle([BASE], 3, seed=7)
+    assert all(r["mean_misread_cells"] == 1.0 for r in rows), rows
+    assert "no printed bit" in caplog.text
+
+
+def test_strong_and_orient_see_the_same_trials(monkeypatch):
+    """Patterns share one stream: same (r, c), angle (so turn) and generator state after every photograph."""
+    from jigsaw.experiment import sweep
+    log = []
+    real_piece, real_photograph = sweep.piece, sweep.photograph
+
+    def piece(r, c, px, name):
+        log.append([name, r, c])
+        return real_piece(r, c, px, name)
+
+    def photograph(gray, alpha, rng, angle, **kw):
+        out = real_photograph(gray, alpha, rng, angle, **kw)
+        log[-1] += [angle, rng.bit_generator.state]
+        return out
+
+    monkeypatch.setattr(sweep, "piece", piece)
+    monkeypatch.setattr(sweep, "photograph", photograph)
+    sweep.run_puzzle([dict(BASE, noise=8, finger=1)], 6, seed=2)
+    strong, orient = ([e[1:] for e in log if e[0] == name] for name in ("strong", "orient"))
+    assert len(strong) == len(orient) == 6 and strong == orient
 
 
 def test_no_findings_saved_for_the_control(monkeypatch, tmp_path):

@@ -5,8 +5,9 @@ decide_single: the paper's single read. Decode the top-left-most complete u x u 
                piece exactly as decode.decode_grid does (placement, off-puzzle checks, centroid), without
                decode_grid's agreement and whole-piece consistency checks.
 misread_cells: count visible cells whose read bit differs from the printed cell at the place the camera
-               looked. Cell centre -> GridRead.H -> frame pixel -> inverse of photograph's M -> piece_back
-               pixel -> truth_raster.
+               looked, and separately the visible cells with no printed cell there (unknown, never misread).
+               Cell centre -> GridRead.H -> frame pixel -> inverse of photograph's M -> piece_back pixel ->
+               truth_raster.
 
 Also the shared plumbing of both experiments: the CSV schema (CONTRACTS.md section 6), git provenance, and
 run_units, which runs independent units serially or in a process pool with the same result and raises
@@ -158,11 +159,17 @@ def truth_raster(r: int, c: int, px_per_cell: float, shape: tuple[int, int], gri
     return out
 
 
-def misread_cells(grid_read: GridRead, M: np.ndarray, truth_grid: np.ndarray) -> int:
-    """Visible cells whose read bit differs from truth_grid (a truth_raster) where the camera looked."""
+def misread_cells(grid_read: GridRead, M: np.ndarray, truth_grid: np.ndarray) -> tuple[int, int]:
+    """(misread, unknown) over the visible cells, at the piece_back pixel where the camera looked.
+
+    misread: cells whose read bit differs from truth_grid (a truth_raster) there.
+    unknown: cells that land off the raster or on OFF_GRID. They have no printed bit and are not counted as
+    misread, since that would move a wrong read out of the <= 1 bucket and hide an E9 trip.
+    The pixel is np.round of the back coordinate: cv2.warpPerspective puts pixel i's centre at coordinate i.
+    """
     ys, xs = np.nonzero(np.asarray(grid_read.mask, bool))
     if len(ys) == 0:
-        return 0
+        return 0, 0
     centres = np.float64(np.column_stack([xs + 0.5, ys + 0.5])).reshape(-1, 1, 2)
     frame = cv2.perspectiveTransform(centres, np.asarray(grid_read.H, np.float64))
     back = cv2.perspectiveTransform(frame, np.linalg.inv(np.asarray(M, np.float64))).reshape(-1, 2)
@@ -171,5 +178,6 @@ def misread_cells(grid_read: GridRead, M: np.ndarray, truth_grid: np.ndarray) ->
     inside = (px >= 0) & (px < w) & (py >= 0) & (py < h)
     truth = np.full(len(ys), OFF_GRID, np.int64)
     truth[inside] = truth_grid[py[inside], px[inside]]
+    known = truth != OFF_GRID
     read = np.asarray(grid_read.cells, np.int64)[ys, xs]
-    return int((read != truth).sum())
+    return int((read[known] != truth[known]).sum()), int((~known).sum())
