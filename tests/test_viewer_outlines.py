@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -40,5 +41,7 @@ def test_committed_outlines_are_current(tmp_path):
 
 
 def test_bleed_matches_printing():
-    printing = pytest.importorskip("jigsaw.printing")
-    assert _script("export_outlines").BLEED_MM == printing.BLEED
+    # read from the source: importing jigsaw.printing needs reportlab
+    src = (ROOT / "jigsaw" / "printing.py").read_text()
+    (bleed,) = re.findall(r"^BLEED = ([0-9.]+)", src, re.M)
+    assert _script("export_outlines").BLEED_MM == float(bleed)

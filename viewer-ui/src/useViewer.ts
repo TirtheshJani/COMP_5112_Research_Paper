@@ -7,7 +7,7 @@ export const RECONNECT_MS = 1000;
 // so the page recovers from a server restart without relying on the browser's own retry.
 export function useViewer(url = "/events"): { state: ViewerState; connected: boolean } {
   const [state, dispatch] = useReducer(
-    (s: ViewerState, e: ViewerEvent) => reduce(s, e, performance.now()),
+    (s: ViewerState, a: { event: ViewerEvent; now: number }) => reduce(s, a.event, a.now),
     initialState,
   );
   const [connected, setConnected] = useState(false);
@@ -22,7 +22,7 @@ export function useViewer(url = "/events"): { state: ViewerState; connected: boo
       source.onopen = () => setConnected(true);
       source.onmessage = (m) => {
         try {
-          dispatch(JSON.parse(m.data) as ViewerEvent);
+          dispatch({ event: JSON.parse(m.data) as ViewerEvent, now: performance.now() });
         } catch {
           // a malformed event is dropped; the next one replaces it
         }

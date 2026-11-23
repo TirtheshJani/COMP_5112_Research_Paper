@@ -52,6 +52,17 @@ def test_events_stream_delivers_published_events_in_order(bus, client):
     for e in events:
         bus.publish(e)
     assert [_data(next(it)) for _ in events] == events
+    assert bus.n_subscribers() == 1
+    r.close()                                       # the client went away: its subscription is dropped
+    assert bus.n_subscribers() == 0
+
+
+def test_events_stream_pings_when_idle(bus, tmp_path):
+    c = create_app(bus, static_dir=tmp_path, heartbeat=0.05).test_client()
+    r = c.get("/events", buffered=False)
+    it = iter(r.response)
+    next(it)
+    assert next(it) == b": ping\n\n"
     r.close()
 
 
@@ -73,8 +84,14 @@ def test_picture(client):
 
 def test_reset_publishes_empty_board(bus, client):
     sub = bus.subscribe()
-    assert client.post("/reset").status_code == 204
+    assert client.post("/reset", json={}).status_code == 204
     assert next(sub) == {"type": "board", "placed": []}
+
+
+def test_reset_refuses_a_form_post(bus, client):
+    # a cross-site page can send a form POST without a preflight, but not a JSON one
+    assert client.post("/reset", data={"x": "1"}).status_code == 415
+    assert bus.subscribe(heartbeat=0.01).__next__() is None
 
 
 def _free_port() -> int:
@@ -92,6 +109,18 @@ def test_serve_runs_in_background(bus):
             assert r.read() == b"\xff\xd8x"
     finally:
         srv.shutdown()
+        srv.server_close()
+
+
+def test_serve_twice_on_one_port_starts_only_one(bus, caplog):
+    port = _free_port()
+    first = serve(bus, port=port)
+    try:
+        with caplog.at_level(logging.WARNING):
+            assert serve(bus, port=port) is None
+    finally:
+        first.shutdown()
+        first.server_close()
 
 
 def test_serve_port_taken_warns_and_returns_none(bus, caplog):

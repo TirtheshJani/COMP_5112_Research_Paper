@@ -46,6 +46,24 @@ describe("headToScene", () => {
     const a = Math.PI / 6; // positive rotation about robot y tips the forward axis down
     const pose = [Math.cos(a), 0, Math.sin(a), 0, 0, 1, 0, 0, -Math.sin(a), 0, Math.cos(a), 0, 0, 0, 0, 1];
     const forward = apply(headToScene(pose), [0, 0, -1]); // the camera looks down -z in the head group
-    expect(forward[1]).toBeLessThan(0);
+    close(forward, [0, -Math.sin(a), -Math.cos(a)]);
+  });
+
+  it("maps a head turned to its left (positive yaw about robot z) to the camera looking toward -x", () => {
+    const a = Math.PI / 4;
+    const pose = [Math.cos(a), -Math.sin(a), 0, 0, Math.sin(a), Math.cos(a), 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    close(apply(headToScene(pose), [0, 0, -1]), [-Math.sin(a), 0, -Math.cos(a)]);
+  });
+
+  it("maps a roll about robot x (forward) to a rotation about three.js z, leaving forward unchanged", () => {
+    const a = Math.PI / 5; // positive roll: the robot's left side (y) goes up
+    const pose = [1, 0, 0, 0, 0, Math.cos(a), -Math.sin(a), 0, 0, Math.sin(a), Math.cos(a), 0, 0, 0, 0, 1];
+    const m = headToScene(pose);
+    close(apply(m, [0, 0, -1]), [0, 0, -1]);
+    close(apply(m, [-1, 0, 0]), [0, Math.sin(a), 0].map((v, i) => (i === 0 ? -Math.cos(a) : v)));
+  });
+
+  it("ignores the translation of the head pose", () => {
+    close(apply(headToScene([1, 0, 0, 0.1, 0, 1, 0, 0.2, 0, 0, 1, 0.3, 0, 0, 0, 1]), [0, 0, 0]), [0, 0, 0]);
   });
 });

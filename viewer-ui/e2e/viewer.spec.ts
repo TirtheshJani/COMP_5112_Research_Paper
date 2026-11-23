@@ -80,15 +80,17 @@ test("W6: an announced piece is highlighted for 2 s", async ({ page }) => {
 });
 
 test("W6: reset clears the board", async ({ page }) => {
+  // right after the first announce the sample has about 5 s before the loop empties the board itself
+  const first = events.find((e) => e.type === "announce");
   await page.goto(replay.url);
-  await expect.poll(async () => (await filledCells(page)).length, { timeout: 20_000 }).toBeGreaterThan(0);
-  await replay.stop(); // freeze the board so only the reset can change it
-  replay = await startReplay(PORT, 0.2);
-  await expect(page.getByTestId("connection")).toHaveText("live", { timeout: 10_000 });
-  const before = (await filledCells(page)).length;
-  expect(before).toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Reset board" }).click();
-  await expect.poll(() => filledCells(page), { timeout: 5_000 }).toEqual([]);
+  await expect(page.getByTestId(`piece-${first.row}-${first.col}`)).toHaveAttribute("data-highlight", "true", { timeout: 20_000 });
+  expect((await filledCells(page)).length).toBeGreaterThan(0);
+  const [response] = await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/reset")),
+    page.getByRole("button", { name: "Reset board" }).click(),
+  ]);
+  expect(response.status()).toBe(204);
+  await expect.poll(() => filledCells(page), { timeout: 1_000 }).toEqual([]);
 });
 
 test("W7: the status line shows the last spoken sentence and the give-up sentence", async ({ page }) => {
@@ -125,15 +127,27 @@ test("W8: the 3D panel shows the piece only while it has a pose, at 30 frames pe
   await expect(scene.locator("canvas")).toHaveCount(1);
   await expect(scene).toHaveAttribute("data-piece-visible", "true", { timeout: 15_000 });
   await expect(scene).toHaveAttribute("data-piece-visible", "false", { timeout: 15_000 });
-  const fps = await page.evaluate(
-    () =>
-      new Promise<number>((ok) => {
-        let n = 0;
-        const t0 = performance.now();
-        const tick = () => (++n, performance.now() - t0 < 2000 ? requestAnimationFrame(tick) : ok(n / 2));
-        requestAnimationFrame(tick);
-      }),
-  );
+  // count three.js renders, not just requestAnimationFrame ticks
+  const renders = () => page.evaluate(() => (window as Window & { __sceneRenders?: number }).__sceneRenders ?? 0);
+  const n0 = await renders();
+  await page.waitForTimeout(2_000);
+  const fps = ((await renders()) - n0) / 2;
   expect(fps).toBeGreaterThanOrEqual(30);
   expect(errors).toEqual([]);
+});
+
+test("W6: a page opened mid-demo shows the current board at once", async ({ page, context }) => {
+  await page.goto(replay.url);
+  await expect.poll(async () => (await filledCells(page)).length, { timeout: 20_000 }).toBeGreaterThan(0);
+  const late = await context.newPage();
+  await late.goto(replay.url);
+  await expect
+    .poll(
+      async () => {
+        const [a, b] = [await filledCells(late), await filledCells(page)];
+        return a.length > 0 && JSON.stringify(a) === JSON.stringify(b);
+      },
+      { timeout: 1_500 },
+    )
+    .toBe(true);
 });

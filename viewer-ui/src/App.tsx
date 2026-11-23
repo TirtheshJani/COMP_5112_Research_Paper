@@ -18,7 +18,11 @@ export function App() {
         <span className={`connection ${connected ? "up" : "down"}`} data-testid="connection">
           {connected ? "live" : "disconnected, retrying"}
         </span>
-        <button type="button" onClick={() => fetch("/reset", { method: "POST" }).catch(() => undefined)}>
+        <button type="button" onClick={() =>
+            fetch("/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(
+              () => undefined,
+            )
+          }>
           Reset board
         </button>
       </footer>

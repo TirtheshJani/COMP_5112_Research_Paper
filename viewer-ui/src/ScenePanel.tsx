@@ -116,7 +116,12 @@ export function ScenePanel({ frame, headPose }: { frame: FrameEvent | null; head
     const observer = new ResizeObserver(resize);
     observer.observe(el);
     resize();
-    renderer.setAnimationLoop(() => renderer.render(scene, view));
+    const w = window as Window & { __sceneRenders?: number };
+    w.__sceneRenders = 0;
+    renderer.setAnimationLoop(() => {
+      renderer.render(scene, view);
+      w.__sceneRenders!++; // read by the W8 frame-rate test
+    });
 
     return () => {
       renderer.setAnimationLoop(null);
