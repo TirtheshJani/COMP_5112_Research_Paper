@@ -5,6 +5,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 
 from jigsaw import app
 from jigsaw.fakes import FakeAudioOut, FakeFrameSource, FakeGestures
@@ -328,3 +329,102 @@ def test_gate_200_presentations_never_announce_a_wrong_piece_or_turn():
           f"rejected or given up {counts['rejected_or_given_up']}, wrong {counts['wrong']}")
     assert counts["wrong"] == 0, f"WRONG ANNOUNCE: {findings}"
     assert counts["correct"] >= 150, counts
+
+
+# scripts/run_demo.py (A7) ---------------------------------------------------------------------------------------
+
+def load_run_demo():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("run_demo", ROOT / "scripts" / "run_demo.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture
+def demo(monkeypatch):
+    """run_demo with silent synthesis; connecting to a robot fails the test unless a test replaces it."""
+    from jigsaw.robot import reachy
+    from jigsaw.voice import tts
+
+    def no_robot(host=None):
+        raise AssertionError("the robot path was constructed")
+
+    monkeypatch.setattr(tts, "synthesize", silent)
+    monkeypatch.setattr(reachy, "connect", no_robot)
+    return load_run_demo()
+
+
+def test_run_demo_render_runs_end_to_end_without_a_robot(demo):
+    gestures, audio = FakeGestures(), FakeAudioOut()
+    out = demo.main(["--source", "render", "--max-frames", "12", "--seed", "3"], gestures=gestures, audio_out=audio)
+    src = demo.render_source(3)
+    truth = {Read(r, c, round(src.kwargs["angle_deg"] / 90) % 4) for r, c in src.pieces[:12]}
+    assert out["frames"] == 12 and out["announced"] and set(out["announced"]) <= truth
+    assert gestures.calls.count("nod") == len(out["announced"]) == len(audio.played)
+
+
+def test_run_demo_replay_runs_end_to_end_without_a_robot(demo, tmp_path):
+    for n in range(4):
+        cv2.imwrite(str(tmp_path / f"a_{n}.png"), shot(3, 2, 90, seed=n))
+        cv2.imwrite(str(tmp_path / f"b_{n}.png"), shot(1, 4, 180, seed=n))
+    gestures = FakeGestures()
+    out = demo.main(["--source", "replay", "--frames", str(tmp_path)], gestures=gestures, audio_out=FakeAudioOut())
+    assert out["frames"] == 8 and out["announced"][0] == Read(3, 2, 1) and gestures.calls[0] == "nod"
+
+
+def test_run_demo_robot_path_uses_connect_and_the_listener(demo, monkeypatch):
+    from jigsaw.robot import reachy
+    from jigsaw.voice import stt
+
+    class Robot(FakeGestures, FakeAudioOut):
+        name, rate = "robot", 16000
+
+        def __init__(self):
+            FakeGestures.__init__(self)
+            FakeAudioOut.__init__(self)
+            self.closed = False
+
+        def frames(self):
+            for n in range(5):
+                yield Frame(shot(3, 2, 90, seed=n), float(n), None, None)
+
+        def close(self):
+            self.closed = True
+
+        def read(self):
+            return None
+
+    robot, hosts, listeners = Robot(), [], []
+
+    class Listener:
+        def __init__(self, audio_in, is_muted):
+            listeners.append((audio_in, is_muted))
+
+        def warm(self):
+            pass
+
+        def poll(self):
+            return None
+
+        def close(self):
+            listeners.append("closed")
+
+    monkeypatch.setattr(reachy, "connect", lambda host=None: hosts.append(host) or robot)
+    monkeypatch.setattr(stt, "CommandListener", Listener)
+    out = demo.main(["--source", "robot", "--host", "10.0.0.100"])
+    assert hosts == ["10.0.0.100"] and robot.closed and robot.calls == ["nod"] and len(robot.played) == 1
+    assert listeners[0][0] is robot and listeners[-1] == "closed" and out["announced"] == [Read(3, 2, 1)]
+    robot.closed, listeners[:] = False, []
+    demo.main(["--source", "robot", "--no-voice-in"])
+    assert listeners == []
+
+
+def test_run_demo_viewer_publishes_to_an_event_bus(demo, monkeypatch):
+    from jigsaw.viewer import server
+    buses = []
+    monkeypatch.setattr(server, "serve", lambda bus, **kw: buses.append(bus.subscribe()))
+    demo.main(["--source", "render", "--max-frames", "3", "--viewer"], gestures=FakeGestures(), audio_out=FakeAudioOut())
+    sub = buses[0]
+    kinds = [sub.items.popleft()["type"] for _ in range(len(sub.items))]
+    assert kinds[:2] == ["board", "frame"] and "announce" in kinds
