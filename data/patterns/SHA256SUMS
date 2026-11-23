@@ -1,0 +1,5 @@
+# original names: strong_u5_256.npz<-u5s4d2_R256C256_seed0.npz, orient_u5_256.npz<-u5s4d1_R256C256_seed0.npz, strong_u3_6x6.txt<-u3v3s4d2_R6C6.txt, orient_u3_6x6.txt<-u3v3s4d1_R6C6.txt
+5d2d4e60e3918ce063de6529567011dc4878ab9f70cd8630fd78bb717f42858e  orient_u5_256.npz
+3b3e9fc57b30dcf990d945ea034b17ceb6022070b327e10cfccfd53ff194ce0d  strong_u5_256.npz
+df57f02cb9913e95d9772db1ca0a7b9f2a71f24714e629028da91503f290b1d6  orient_u3_6x6.txt
+83055f1719d7b46e751c2069d5ba017cac59e2b29bbbe0ec5fceaeded716c037  strong_u3_6x6.txt

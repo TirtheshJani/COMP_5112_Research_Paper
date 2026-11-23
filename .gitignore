@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.egg-info/
+.worktrees/
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+results/frames/
+node_modules/
+viewer-ui/dist/
+*.onnx
+results/
+reachy_mini-main.zip
