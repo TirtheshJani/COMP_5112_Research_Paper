@@ -5,8 +5,9 @@
 Saves frames to results/probes/, prints their shape, dtype, the camera resolution and whether the
 intrinsics K and D are available over the network. Hold something red in front of the camera: the
 script prints the mean of each channel, and in BGR the red object raises the LAST channel.
-Uses ReachyMini(connection_mode="network", host=...) and media.get_frame() (BGR per the SDK
-docstring, reachy-mini 1.15.0). UNVERIFIED on the robot until this probe has run.
+Uses ReachyMini(connection_mode="network", host=...) and media.get_frame(), reachy-mini 1.15.0; both
+worked on the robot and gave (720, 1280, 3) uint8 frames with K and D (results/probes/p2.txt, 23 Nov 2026).
+UNVERIFIED: BGR channel order (SDK docstring); the saved p2.txt has no red-object reading.
 """
 import argparse
 import time
