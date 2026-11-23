@@ -7,7 +7,14 @@ decide_single: the paper's single read. Decode the top-left-most complete u x u 
 misread_cells: count visible cells whose read bit differs from the printed cell at the place the camera
                looked. Cell centre -> GridRead.H -> frame pixel -> inverse of photograph's M -> piece_back
                pixel -> truth_raster.
+
+Also the shared plumbing of both experiments: the CSV schema (CONTRACTS.md section 6), git provenance, and
+run_units, which runs independent units serially or in a process pool with the same result.
 """
+import csv
+import subprocess
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 from typing import Literal
 
 import cv2
@@ -20,6 +27,44 @@ from jigsaw.patch import back_grid, g_to_front
 from jigsaw.types import Decision, GridRead, Position, Read, Reject
 
 OFF_GRID = 255        # truth_raster value where no printed cell is
+ROOT = Path(__file__).resolve().parents[2]
+COLUMNS = ["experiment", "pattern", "decoder", "arm", "px_per_cell", "tilt", "blur", "noise", "finger", "n",
+           "correct", "rejected", "wrong", "wrong_le1_misread", "reads_le1_misread", "mean_misread_cells",
+           "seed", "commit"]
+
+
+def git_commit() -> str:
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def tree_is_dirty() -> bool:
+    """True when git reports any change, untracked files included (results/ is ignored)."""
+    return bool(subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True,
+                               check=True).stdout.strip())
+
+
+def write_csv(path, rows: list[dict], commit: str) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=COLUMNS)
+        w.writeheader()
+        for row in rows:
+            w.writerow({**row, "commit": commit})
+
+
+def run_units(fn, args: list[tuple], workers: int = 1) -> list[dict]:
+    """fn(*a) for every a in args, each returning a list of rows; rows come back in args order.
+
+    fn must be a module-level function so that worker processes can import it (Windows spawns).
+    """
+    if workers <= 1:
+        results = [fn(*a) for a in args]
+    else:
+        with ProcessPoolExecutor(workers) as ex:
+            results = list(ex.map(fn, *zip(*args)))
+    return [row for rows in results for row in rows]
 
 
 def classify(truth: Read, decision: Decision) -> Literal["correct", "rejected", "wrong"]:

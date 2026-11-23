@@ -1,0 +1,78 @@
+"""sweep.run_puzzle: rendered puzzle rows (S2 E2, E3, E8, E11)."""
+import csv
+
+import pytest
+
+from jigsaw.experiment.runner import COLUMNS, write_csv
+from jigsaw.experiment.sweep import full_conditions, run_puzzle
+
+BASE = {"px_per_cell": 16, "tilt": 0.06, "blur": 1.0, "noise": 4, "finger": 0}
+
+
+def test_full_conditions_is_the_cross_of_the_levels():
+    conds = full_conditions()
+    assert len(conds) == 6 * 3 * 2 * 2 * 1
+    assert len({tuple(sorted(c.items())) for c in conds}) == len(conds)
+    assert {c["px_per_cell"] for c in conds} == {8, 10, 12, 16, 22, 28}
+    assert {c["blur"] for c in conds} == {0.5, 1.0, 1.5}
+    assert {c["noise"] for c in conds} == {4, 8}
+    assert {c["finger"] for c in conds} == {0, 1}
+    assert {c["tilt"] for c in conds} == {0.06}
+    assert BASE in conds
+
+
+@pytest.fixture(scope="module")
+def rows50():
+    return run_puzzle([BASE], 50, seed=7)
+
+
+def test_one_row_per_pattern_and_decoder(rows50):
+    assert sorted((r["pattern"], r["decoder"]) for r in rows50) == [
+        ("orient", "grid"), ("orient", "single"), ("strong", "grid"), ("strong", "single")]
+    for r in rows50:
+        assert list(r) == COLUMNS[:-1]
+        assert r["experiment"] == "puzzle" and r["seed"] == 7 and r["n"] == 50
+        assert {k: r[k] for k in BASE} == BASE
+
+
+def test_counts_sum_to_n(rows50):
+    for r in rows50:
+        assert r["correct"] + r["rejected"] + r["wrong"] == 50
+        assert 0 <= r["wrong_le1_misread"] <= r["wrong"]
+        assert 0 <= r["reads_le1_misread"] <= 50
+
+
+def test_both_decoders_see_the_same_reads(rows50):
+    for pattern in ("strong", "orient"):
+        single, grid = (next(r for r in rows50 if r["pattern"] == pattern and r["decoder"] == d) for d in ("single", "grid"))
+        assert single["mean_misread_cells"] == grid["mean_misread_cells"]
+        assert single["reads_le1_misread"] == grid["reads_le1_misread"]
+
+
+def test_truth_convention_gives_mostly_correct_reads_at_the_baseline(rows50):
+    for r in rows50:
+        assert r["correct"] >= 40, r
+
+
+SMALL = [dict(BASE, px_per_cell=8), dict(BASE, noise=8, finger=1)]
+
+
+def test_same_seed_gives_identical_rows():
+    assert run_puzzle(SMALL, 4, seed=3) == run_puzzle(SMALL, 4, seed=3)
+
+
+def test_adding_a_condition_does_not_change_the_others():
+    assert run_puzzle(SMALL[1:], 4, seed=3) == run_puzzle(SMALL, 4, seed=3)[4:]
+
+
+def test_parallel_equals_serial():
+    assert run_puzzle(SMALL, 4, seed=5, workers=2) == run_puzzle(SMALL, 4, seed=5, workers=1)
+
+
+def test_write_csv_ends_with_seed_and_commit(tmp_path, rows50):
+    out = tmp_path / "sub" / "sim.csv"
+    write_csv(out, rows50, "abc123")
+    with open(out, newline="") as f:
+        got = list(csv.reader(f))
+    assert got[0] == COLUMNS and COLUMNS[-2:] == ["seed", "commit"]
+    assert len(got) == 1 + len(rows50) and all(line[-2:] == ["7", "abc123"] for line in got[1:])
