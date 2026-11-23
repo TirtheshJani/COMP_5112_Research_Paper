@@ -3,8 +3,8 @@
 Usage: uv run python scripts/replay_events.py tests/data/events_sample.jsonl --rate 10 [--port 8765] [--loops 0]
 
 For each frame event the matching JPEG is set on the bus before the event is published. Read frames
-show the announced piece at its turn on the green mat; reject frames show a piece at an odd angle on
-clutter. Frames are rendered once at start (seeded by the event's index) and reused on every loop.
+show the announced piece at its turn on the green mat; a too_many_errors reject shows a piece on the mat
+(its grid is drawn in amber); other rejects show a piece at an odd angle on clutter. Frames are rendered once at start (seeded by the event's index) and reused on every loop.
 """
 import argparse
 import json
@@ -35,6 +35,8 @@ def render_frame(event: dict, seed: int) -> tuple[bytes, list[list[float]] | Non
     d = event["decision"]
     if d["kind"] == "read":
         r, c, angle, background = d["row"], d["col"], 90.0 * d["turn"] + rng.uniform(-6, 6), "mat"
+    elif d["reason"] == "too_many_errors":     # a grid was found but did not decode: draw it in amber
+        r, c, angle, background = int(rng.integers(T.PUZZLE_ROWS)), int(rng.integers(T.PUZZLE_COLS)), rng.uniform(0, 360), "mat"
     else:
         r, c, angle, background = int(rng.integers(T.PUZZLE_ROWS)), int(rng.integers(T.PUZZLE_COLS)), 45.0, "clutter"
     gray, alpha = piece_back(r, c, PX_PER_CELL)
@@ -42,7 +44,7 @@ def render_frame(event: dict, seed: int) -> tuple[bytes, list[list[float]] | Non
                         return_transform=True)
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
     assert ok
-    if d["kind"] != "read":
+    if background != "mat":
         return buf.tobytes(), None
     # same back-view frame as piece_back: outline mirrored, origin two cells outside its bounding box
     s = PX_PER_CELL / T.CELL_MM

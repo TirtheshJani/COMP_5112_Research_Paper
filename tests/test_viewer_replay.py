@@ -36,7 +36,8 @@ def test_sample_follows_contract_v2_section_5():
                 assert 0 <= d["row"] < 7 and 0 <= d["col"] < 5 and 0 <= d["turn"] < 4
             else:
                 assert d["kind"] == "reject" and d["reason"]
-                assert e["grid"] is None and e["rvec"] is None and e["tvec"] is None
+                assert e["rvec"] is None and e["tvec"] is None
+                assert (e["grid"] is not None) == (d["reason"] == "too_many_errors")
         elif e["type"] == "announce":
             assert 0 <= e["row"] < 7 and 0 <= e["col"] < 5
         elif e["type"] == "head":
@@ -51,7 +52,7 @@ def test_sample_grids_match_rendered_frames():
     rp = _replay()
     events = rp.load_events(SAMPLE)
     for i, e in enumerate(events):
-        if e["type"] == "frame" and e["decision"]["kind"] == "read":
+        if e["type"] == "frame" and e["grid"] is not None:
             jpeg, grid = rp.render_frame(e, seed=i)
             assert jpeg[:2] == b"\xff\xd8"
             np.testing.assert_allclose(grid, e["grid"], atol=1.0)

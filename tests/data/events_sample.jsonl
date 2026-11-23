@@ -21,8 +21,8 @@
 {"type": "announce", "row": 0, "col": 4, "turn": 0, "text": "Row 1, column 5. Keep it as it is."}
 {"type": "board", "placed": [[3, 1], [0, 4]]}
 {"type": "frame", "t": 1.5, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
-{"type": "frame", "t": 1.6, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "too_many_errors"}}
-{"type": "frame", "t": 1.7, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "too_many_errors"}}
+{"type": "frame", "t": 1.6, "grid": [[488.2, 307.7], [334.5, 490.1], [151.4, 339.6], [301.4, 153.5]], "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "too_many_errors"}}
+{"type": "frame", "t": 1.7, "grid": [[397.3, 493.3], [201.0, 357.2], [334.8, 163.2], [532.4, 295.3]], "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "too_many_errors"}}
 {"type": "give_up", "text": "I cannot read that one. Show me again."}
 {"type": "frame", "t": 1.8, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
 {"type": "frame", "t": 1.9, "grid": null, "rvec": null, "tvec": null, "decision": {"kind": "reject", "reason": "no_grid"}}
