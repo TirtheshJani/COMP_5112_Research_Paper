@@ -481,3 +481,24 @@ def test_connect_passes_host_and_returns_a_robot(monkeypatch):
     seen.clear()
     connect()
     assert seen == [{}]
+
+
+def test_frames_wait_with_the_injected_sleep_not_the_real_one():
+    clock, slept = FakeClock(), []
+    media = StubMedia(frames=[img(1), None, None, img(2)])
+    it = ReachyRobot(StubMini(media), pose, clock=clock, sleep=fake_sleep(clock, slept)).frames()
+    next(it), next(it)
+    assert slept == [0.005, 0.005]
+
+
+def test_wait_for_frame_uses_the_injected_clock_and_sleep():
+    clock, slept = FakeClock(), []
+    robot = ReachyRobot(StubMini(StubMedia()), pose, clock=clock, sleep=fake_sleep(clock, slept))
+    assert robot._wait_for_frame(1.0) is False
+    assert sum(slept) >= 1.0 and set(slept) == {0.02}
+
+
+def test_resample_of_a_signal_shorter_than_the_filter_keeps_its_level():
+    out = reachy.resample(np.ones(10, np.float32), 48000, 16000)
+    assert len(out) == 3
+    assert out == pytest.approx(1.0, abs=1e-6)

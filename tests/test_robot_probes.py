@@ -230,3 +230,13 @@ def test_csv_round_trip_keeps_missing_px_per_cell(tmp_path):
     path = tmp_path / "focus_1280x720.csv"
     p6.write_rows(path, rows)
     assert p6.read_rows([path]) == rows
+
+
+def test_p4_dry_run_does_not_open_its_log(monkeypatch, capsys):
+    p4 = load("p4_nod")
+    teed = []
+    monkeypatch.setitem(sys.modules, "_tee", types.SimpleNamespace(tee=teed.append))
+    monkeypatch.setattr(sys, "argv", ["p4_nod.py"])
+    p4.main()
+    assert "Dry run" in capsys.readouterr().out
+    assert teed == []                                       # results/probes/p4.txt is committed evidence

@@ -12,8 +12,6 @@ import argparse
 
 
 def main():
-    from _tee import tee
-    tee("p4")
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="reachy-mini.local")
     ap.add_argument("--move", action="store_true")
@@ -21,6 +19,8 @@ def main():
     if not a.move:
         print("Dry run. Add --move to let the head move (10 degrees, slowly).")
         return
+    from _tee import tee
+    tee("p4")  # only a real run replaces results/probes/p4.txt; a dry run leaves the evidence alone
     from reachy_mini import ReachyMini
     from reachy_mini.utils import create_head_pose
 

@@ -15,7 +15,7 @@ class _MicIn:
         import sounddevice as sd
 
         self._q: queue.Queue = queue.Queue()
-        # UNVERIFIED: sounddevice docs (InputStream callback signature, blocksize); not run here
+        # UNVERIFIED: sounddevice.py:733 (_StreamBase blocksize) and the callback(indata, frames, time, status) example near :178; not run here
         self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=1600, callback=self._cb)
         self._stream.start()
 
