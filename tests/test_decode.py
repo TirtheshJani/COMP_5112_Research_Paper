@@ -132,12 +132,36 @@ def test_rejects_garbage(table):
     assert decode_grid(np.zeros((4, 4), np.uint8), np.ones((4, 4), bool), table) == Reject("no_window")
 
 
-@settings(max_examples=200, deadline=None)
+def test_two_and_three_misread_cells_never_misplace_a_piece(G, table):
+    rng = np.random.default_rng(7)
+    wrong = reads = trials = 0
+    for r in range(T.PUZZLE_ROWS):
+        for c in range(T.PUZZLE_COLS):
+            for k in range(4):
+                cells, mask = seen_piece(G, r, c, k)
+                idx = np.argwhere(mask)
+                for n_flip in (2, 3):
+                    for _ in range(3):
+                        x = cells.copy()
+                        for a, b in idx[rng.choice(len(idx), n_flip, replace=False)]:
+                            x[a, b] ^= 1
+                        d = decode_grid(x, mask, table)
+                        trials += 1
+                        assert d == Read(r, c, k) or isinstance(d, Reject), (r, c, k, n_flip, d)
+                        reads += isinstance(d, Read)
+                        wrong += isinstance(d, Read) and d != Read(r, c, k)
+    assert wrong == 0 and trials == 35 * 4 * 2 * 3 and reads > 0
+
+
+_TABLE = build_table(back_grid())
+
+
+@settings(max_examples=200, deadline=None, derandomize=True)
 @given(st.integers(0, 2 ** 64 - 1), st.integers(0, 2 ** 64 - 1))
 def test_decoders_never_raise(bits, mbits):
     cells = np.array([(bits >> n) & 1 for n in range(64)], np.uint8).reshape(8, 8)
     mask = np.array([(mbits >> n) & 1 for n in range(64)], bool).reshape(8, 8)
-    t = build_table(back_grid())
+    t = _TABLE
     assert isinstance(decode_grid(cells, mask, t), (Read, Reject))
     assert isinstance(decode_single(cells[:5, :5], t), (Position, Reject))
 

@@ -77,18 +77,21 @@ def outline(r: int, c: int, seed: int = SEED) -> np.ndarray:
     return np.vstack([top[:-1], right[:-1], bottom[:-1], left[:-1]])
 
 
-def all_edges(seed: int = SEED) -> list[np.ndarray]:
+def _all_edges(seed: int = SEED) -> list[np.ndarray]:
     _, _, vedge, hedge = edges(seed)
     return [e for row in vedge for e in row] + [e for row in hedge for e in row]
 
 
-def visible_cells(r: int, c: int, tol_mm: float = 0.5, offset_mm=(0.0, 0.0), px_per_mm: int = 20,
-                  seed: int = SEED) -> np.ndarray:
+_PX_PER_MM = 20
+
+
+def visible_cells(r: int, c: int, tol_mm: float = 0.5, offset_mm=(0.0, 0.0)) -> np.ndarray:
     """(GRID_ROWS, GRID_COLS) bool: G cells lying fully inside piece (r, c), shrunk by tol_mm.
 
     offset_mm shifts the back print relative to the cut, in front coordinates (duplex misregistration).
     """
-    poly = outline(r, c, seed)
+    px_per_mm = _PX_PER_MM
+    poly = outline(r, c)
     pad = 2 * P
     ox, oy = c * P - pad / 2, r * P - pad / 2
     size = int((P + pad) * px_per_mm)

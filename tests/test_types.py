@@ -1,4 +1,7 @@
+import dataclasses
+
 import numpy as np
+import pytest
 
 from jigsaw import types as T
 from jigsaw.fakes import FakeAudioIn, FakeAudioOut, FakeFrameSource, FakeGestures
@@ -8,11 +11,14 @@ def test_constants():
     assert (T.U, T.PIECE_CELLS, T.PUZZLE_ROWS, T.PUZZLE_COLS) == (5, 10, 7, 5)
     assert (T.GRID_ROWS, T.GRID_COLS) == (72, 52)
     assert abs(T.PIECE_MM - 36.0) < 1e-9
+    assert T.CELL_MM == 3.6 and T.MARGIN_CELLS == 1 and abs(T.PIECE_CELLS * T.CELL_MM - T.PIECE_MM) < 1e-9
 
 
 def test_read_is_hashable_and_frozen():
     assert T.Read(1, 2, 3) == T.Read(1, 2, 3)
     assert len({T.Read(1, 2, 3), T.Read(1, 2, 3)}) == 1
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        T.Read(1, 2, 3).row = 0
 
 
 def test_fakes_satisfy_protocols():
