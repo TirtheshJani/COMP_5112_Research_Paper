@@ -43,9 +43,9 @@ def test_noise_arm_levels_and_counts():
         ("strong", 0.0), ("orient", 0.0), ("strong", 0.05), ("orient", 0.05), ("strong", 0.2), ("orient", 0.2)]
     for r in rows:
         assert r["arm"] == "noise" and r["correct"] + r["rejected"] + r["wrong"] == 300
-        assert 0 <= r["wrong_le1_misread"] <= r["wrong"] and r["reads_le1_misread"] <= 300
+        assert 0 <= r["wrong_le1_misread"] <= r["wrong"] and r["wrong_le1_misread"] <= r["reads_le1_misread"]
     clean = [r for r in rows if r["noise"] == 0.0]
-    assert all(r["correct"] == 300 and r["mean_misread_cells"] == 0.0 for r in clean)
+    assert all(r["correct"] == 300 and r["mean_misread_cells"] == 0.0 and r["reads_le1_misread"] == 300 for r in clean)
     assert all(r["wrong_le1_misread"] == 0 for r in rows if r["pattern"] == "strong")
 
 

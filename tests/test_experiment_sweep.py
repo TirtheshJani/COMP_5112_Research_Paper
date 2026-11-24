@@ -53,7 +53,7 @@ def test_both_decoders_see_the_same_reads(rows50):
 
 def test_truth_convention_gives_mostly_correct_reads_at_the_baseline(rows50):
     for r in rows50:
-        assert r["correct"] >= 40, r
+        assert r["wrong"] == 0 and r["correct"] >= 48, r
 
 
 SMALL = [dict(BASE, px_per_cell=8), dict(BASE, noise=8, finger=1)]

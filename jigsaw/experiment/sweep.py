@@ -16,7 +16,7 @@ import numpy as np
 
 from jigsaw import types as T
 from jigsaw.decode import build_table, decode_grid
-from jigsaw.experiment.runner import classify, decide_single, misread_cells, run_units, save_finding, truth_raster
+from jigsaw.experiment.runner import FINDINGS_DIR, classify, decide_single, misread_cells, run_units, save_finding, truth_raster
 from jigsaw.patch import PATTERNS, back_grid, load_torus
 from jigsaw.render import photograph, piece_back
 from jigsaw.types import GridRead, Read
@@ -60,11 +60,11 @@ def piece(r: int, c: int, px_per_cell: int, name: str):
     return gray, alpha, truth_raster(r, c, px_per_cell, gray.shape, grid=pattern_grid(name))
 
 
-def puzzle_unit(cond: dict, name: str, n: int, seed: int, findings_dir=None) -> list[dict]:
+def puzzle_unit(cond: dict, name: str, n: int, seed: int, findings_dir=FINDINGS_DIR) -> list[dict]:
     """n trials of one pattern under one condition; one row per decoder.
 
     E9: a wrong read with at most one misread cell on the strong pattern saves the frame and the cells to
-    findings_dir (when given); run_units then stops the run.
+    findings_dir (default results/findings); run_units then stops the run.
     """
     rng = condition_rng(seed, cond)
     table = pattern_table(name)
@@ -95,7 +95,7 @@ def puzzle_unit(cond: dict, name: str, n: int, seed: int, findings_dir=None) -> 
             counts[dec][kind] += 1
             if kind == "wrong" and m is not None and m <= 1:
                 counts[dec]["wrong_le1_misread"] += 1
-                if name == "strong" and findings_dir is not None:
+                if name == "strong":
                     tag = "_".join([f"puzzle_{name}_{dec}"] + [f"{key}{cond[key]}" for key in LEVELS] + [f"seed{seed}_trial{t}"])
                     save_finding(findings_dir, tag, image=img, cells=gr.cells, mask=gr.mask, H=gr.H, M=M,
                                  truth=[r, c, k], angle_deg=angle, decision=repr(decision), misread=m,
@@ -110,7 +110,7 @@ def puzzle_unit(cond: dict, name: str, n: int, seed: int, findings_dir=None) -> 
              "reads_le1_misread": le1, "mean_misread_cells": mean, "seed": seed} for dec in DECODERS]
 
 
-def run_puzzle(conditions: list[dict], n: int, seed: int, workers: int = 1, findings_dir=None) -> list[dict]:
+def run_puzzle(conditions: list[dict], n: int, seed: int, workers: int = 1, findings_dir=FINDINGS_DIR) -> list[dict]:
     """One row per condition, pattern and decoder, in that order (CONTRACTS.md section 6, without commit).
 
     Raises runner.Contradiction on E9 after saving the offending frames to findings_dir.

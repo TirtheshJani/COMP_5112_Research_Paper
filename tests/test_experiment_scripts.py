@@ -32,7 +32,7 @@ def read_rows(path):
 def test_puzzle_script_refuses_a_dirty_tree(puzzle, monkeypatch, tmp_path):
     monkeypatch.setattr(puzzle, "tree_is_dirty", lambda: True)
     out = tmp_path / "p.csv"
-    assert puzzle.main(["--seed", "1", "--n", "2", "--out", str(out), "--workers", "1"]) != 0
+    assert puzzle.main(["--seed", "1", "--n", "2", "--out", str(out), "--workers", "1"]) == 2
     assert not out.exists()
 
 
@@ -61,7 +61,7 @@ def dense(monkeypatch):
 def test_dense_script_refuses_a_dirty_tree(dense, monkeypatch, tmp_path):
     monkeypatch.setattr(dense, "tree_is_dirty", lambda: True)
     out = tmp_path / "d.csv"
-    assert dense.main(["--seed", "1", "--n", "5", "--out", str(out)]) != 0
+    assert dense.main(["--seed", "1", "--n", "5", "--out", str(out)]) == 2
     assert not out.exists()
 
 
@@ -83,7 +83,7 @@ def test_puzzle_script_exits_non_zero_on_a_contradiction(puzzle, monkeypatch, tm
     monkeypatch.setattr(sweep, "decode_grid", lambda cells, mask, table: Read(6, 4, 3))
     out, findings = tmp_path / "p.csv", tmp_path / "findings"
     code = puzzle.main(["--seed", "1", "--n", "2", "--out", str(out), "--workers", "1", "--findings", str(findings)])
-    assert code != 0 and not out.exists() and list(findings.glob("puzzle_strong_grid_*.png"))
+    assert code == 3 and not out.exists() and list(findings.glob("puzzle_strong_grid_*.png"))
 
 
 def test_dense_script_exits_non_zero_on_a_contradiction(dense, monkeypatch, tmp_path):
@@ -92,5 +92,5 @@ def test_dense_script_exits_non_zero_on_a_contradiction(dense, monkeypatch, tmp_
     monkeypatch.setattr(dense, "tree_is_dirty", lambda: False)
     monkeypatch.setattr(contrast, "decode_single", lambda window, table: Position(5, 5, 3))
     out, findings = tmp_path / "d.csv", tmp_path / "findings"
-    assert dense.main(["--seed", "1", "--n", "5", "--out", str(out), "--findings", str(findings)]) != 0
+    assert dense.main(["--seed", "1", "--n", "5", "--out", str(out), "--findings", str(findings)]) == 3
     assert not out.exists() and list(findings.glob("dense_strong_forced1_*.npz"))

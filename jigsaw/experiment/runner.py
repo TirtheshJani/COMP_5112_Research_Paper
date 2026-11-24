@@ -28,6 +28,8 @@ from jigsaw.geometry import W, outline
 from jigsaw.patch import back_grid, g_to_front
 from jigsaw.types import Decision, GridRead, Position, Read, Reject
 
+FINDINGS_DIR = Path(__file__).resolve().parents[2] / "results" / "findings"
+
 OFF_GRID = 255        # truth_raster value where no printed cell is
 ROOT = Path(__file__).resolve().parents[2]
 COLUMNS = ["experiment", "pattern", "decoder", "arm", "px_per_cell", "tilt", "blur", "noise", "finger", "n",
@@ -87,7 +89,8 @@ def run_units(fn, args: list[tuple], workers: int = 1) -> list[dict]:
     """fn(*a) for every a in args, each returning a list of rows; rows come back in args order.
 
     Raises Contradiction (E9) as soon as a finished unit has a strong row with wrong_le1_misread > 0; pending
-    units are cancelled. fn must be a module-level function so that worker processes can import it.
+    units are cancelled and the exception carries the offending rows of every unit that finished, in args
+    order. fn must be a module-level function so that worker processes can import it.
     """
     if workers <= 1:
         results = [_check(fn(*a)) for a in args]
@@ -97,6 +100,11 @@ def run_units(fn, args: list[tuple], workers: int = 1) -> list[dict]:
             try:
                 for f in as_completed(futures):
                     _check(f.result())
+            except Contradiction:
+                ex.shutdown(wait=True, cancel_futures=True)
+                bad = [r for f in futures if f.done() and not f.cancelled() and f.exception() is None
+                       for r in f.result() if r["pattern"] == "strong" and r["wrong_le1_misread"] > 0]
+                raise Contradiction(bad) from None
             except BaseException:
                 ex.shutdown(wait=True, cancel_futures=True)
                 raise
@@ -159,8 +167,8 @@ def truth_raster(r: int, c: int, px_per_cell: float, shape: tuple[int, int], gri
     return out
 
 
-def misread_cells(grid_read: GridRead, M: np.ndarray, truth_grid: np.ndarray) -> tuple[int, int]:
-    """(misread, unknown) over the visible cells, at the piece_back pixel where the camera looked.
+def misread_cells(grid_read: GridRead, M: np.ndarray, truth_grid: np.ndarray) -> tuple[int | None, int]:
+    """(misread, unknown) over the visible cells, or (None, 0) when the mask is empty (nothing to count), at the piece_back pixel where the camera looked.
 
     misread: cells whose read bit differs from truth_grid (a truth_raster) there.
     unknown: cells that land off the raster or on OFF_GRID. They have no printed bit and are not counted as
@@ -169,7 +177,7 @@ def misread_cells(grid_read: GridRead, M: np.ndarray, truth_grid: np.ndarray) ->
     """
     ys, xs = np.nonzero(np.asarray(grid_read.mask, bool))
     if len(ys) == 0:
-        return 0, 0
+        return None, 0
     centres = np.float64(np.column_stack([xs + 0.5, ys + 0.5])).reshape(-1, 1, 2)
     frame = cv2.perspectiveTransform(centres, np.asarray(grid_read.H, np.float64))
     back = cv2.perspectiveTransform(frame, np.linalg.inv(np.asarray(M, np.float64))).reshape(-1, 2)
