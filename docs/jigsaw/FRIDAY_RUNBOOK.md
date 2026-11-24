@@ -128,9 +128,8 @@ Open the viewer at http://localhost:8765. Present five different pieces one at a
 - See and hear: one announcement per piece (row, column and turn sentence) with a nod; the board in the viewer fills in that piece.
 - With fingers over the grid you should hear a reject phrase ("Move your fingers to the edge of the piece."); with the grid hidden, "Show me the grid side, over the green card."
 - Voice commands: say "again", "next" and "stop" at least three times each across the run. Count how many were understood, out of 10 or more (S4 V8 target: nine of ten).
-- Known behaviour, not a failure:
-  - one empty-view frame while you hold a piece makes the robot repeat it (DECISIONS 23);
-  - an "ask" answer can be followed by a shake for the same piece (DECISIONS 22).
+- Known behaviour, not a failure: one empty-view frame while you hold a piece makes the robot repeat it (DECISIONS 23).
+- An "ask" answer must not be followed by a shake for the same piece; A4 fixed that (Stable.mark_answered, DECISIONS 29 and 32). If it happens, write it in the Outcome.
 - Pass: 5 of 5 pieces announced correctly, 0 wrong (stop rule 1). Write the voice-command count in the Outcome.
 
 Outcome:
@@ -194,6 +193,6 @@ Outcome:
 
 ## Not covered on Friday unless there is time
 
-- Measuring the 720p K correction (`reachy.py:58`, DECISIONS entry 7) needs a target of known size at a measured distance; no probe exists. Until then nothing in the paper may rely on the corrected K.
+- Measuring the 720p K correction (`reachy.py:58`, DECISIONS entry 7) needs a target of known size at a measured distance; no probe exists. Until then nothing in the paper may rely on the corrected K, and the S8 v2 check "no UNVERIFIED marks left in jigsaw/robot/" stays open for this one mark even after Friday.
 - Whether `connect()` should move the head to neutral (HANDOFF_S3 open question 5).
 - Whether the SDK message "No Reachy Mini Audio USB device found!" matters for a remote client. Step 2 shows it in practice.
