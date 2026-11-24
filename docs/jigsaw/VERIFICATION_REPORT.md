@@ -31,8 +31,8 @@ Pending:
 Found during this check (details in the sections named):
 
 1. `scripts/reproduce_all.py` at 5cdb036 did not run the simulations or `make_figures.py`; it listed them as "not covered". 9ac5db4 added them and reached `main` in the merge at 82c03ec. The first full run at 82c03ec then failed because the print rebuild left the clone dirty; cd2d5b6 fixed that (Q1).
-2. `FRIDAY_RUNBOOK.md` step 6 lists "an ask answer can be followed by a shake for the same piece (DECISIONS 22)" as known behaviour. A4 app F4 (e64b1ec) fixed that: `app.py:130` calls `Stable.mark_answered()`, and `stable.py:56-57` then blocks the give-up (Q11 section, "Documentation drift").
-3. `tests/test_end_to_end.py:52` converts the pypdfium2 render with `COLOR_RGB2GRAY`, but pypdfium2 5.15.2 returns BGR. The test still passes; the conversion nearly triples the tile error (Q4, channel order).
+2. `FRIDAY_RUNBOOK.md` step 6 lists "an ask answer can be followed by a shake for the same piece (DECISIONS 22)" as known behaviour. A4 app F4 (e64b1ec) fixed that: `app.py:130` calls `Stable.mark_answered()`, and `stable.py:56-57` then blocks the give-up (Q11 section, "Documentation drift"). Resolved: the runbook was corrected in 9294f58.
+3. `tests/test_end_to_end.py:52` converted the pypdfium2 render with `COLOR_RGB2GRAY`, but pypdfium2 5.15.2 returns BGR. The test still passed; the conversion nearly tripled the tile error (Q4, channel order). Resolved in 21792f0: the test now converts as BGR, the mean tile error fell from 6.78 to 2.35 grey levels, and the test still fails when the turn 1 and turn 3 sentences are swapped.
 4. The v2 check "no UNVERIFIED marks remain in `jigsaw/robot/`" cannot pass after Friday as planned: `reachy.py:58` (the 720p K correction) has no Friday step (v2 checks).
 5. The paper outline describes the dense and physical experiments differently from what was run (Q9).
 
@@ -326,8 +326,8 @@ A gap to close on Friday: the demo log has no timestamps. `run_demo.py:66` sets 
 
 ### Documentation drift found during this check
 
-- `FRIDAY_RUNBOOK.md` step 6 still lists DECISIONS 22's "an ask answer can be followed by a shake for the same piece" as known behaviour. Since e64b1ec (A4 app F4), `app.py:130` calls `stable.mark_answered()` and `stable.py:56-57` returns no give-up after it. A shake can still follow an `ask` that lands on a rejected frame, but not a nod.
-- `scripts/reproduce_all.py:7-8` says the simulation scripts do not exist at this commit; they do (Q1).
+- `FRIDAY_RUNBOOK.md` step 6 still lists DECISIONS 22's "an ask answer can be followed by a shake for the same piece" as known behaviour. Since e64b1ec (A4 app F4), `app.py:130` calls `stable.mark_answered()` and `stable.py:56-57` returns no give-up after it. A shake can still follow an `ask` that lands on a rejected frame, but not a nod. Resolved: runbook corrected in 9294f58.
+- `scripts/reproduce_all.py:7-8` said the simulation scripts do not exist at this commit. Resolved in 9ac5db4, whose docstring describes the simulation steps (Q1).
 - `HANDOFF_S2.md:3` says the results files are not committed; they have been committed since f161830.
 - `HANDOFF_S6.md` cites `protocol.py:35` and `run_physical.py:19`; the marks are now at `:37` and `:20`. The runbook already uses the new lines.
 - `HANDOFF_S6.md:36` describes a local `decode_physical.wilson`; `decode_physical.py:27` now imports `jigsaw.experiment.stats.wilson` (DECISIONS 26).
