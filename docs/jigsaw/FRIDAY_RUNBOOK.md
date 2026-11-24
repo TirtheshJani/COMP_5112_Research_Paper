@@ -191,6 +191,21 @@ Outcome:
 
 Outcome:
 
+## Any time, no robot: full clean-clone reproduction (about 50 minutes, unattended)
+
+Closes S8 Q1 and Q2 for the puzzle sweep, which has only been regenerated in a clean worktree so far. Both earlier attempts from a fresh clone were stopped by Claude Code because the laptop ran low on memory, so close other programs first and run it overnight or while nothing else is open. It does not need the robot and can run before or after Friday. Run it after step 7c, so the physical decode is included.
+```
+cd C:/Users/TJ/Documents/GitHub/COMP_5112_Research_Paper
+unset SSL_CERT_FILE
+uv run python scripts/reproduce_all.py --workers 6
+```
+- It needs a tree with no uncommitted tracked changes. The local LICENSE edit counts, so commit or set it aside first, or run it from a clean worktree.
+- Pass: `results/_repro/report.md` says `Result: PASS`, both CSV diffs show 0 differing rows apart from `commit`, and sim_summary.md is byte-identical.
+- Then update Q1 and Q2 in `VERIFICATION_REPORT.md`.
+- Afterwards delete the clone folders under `results/_repro/` and `.worktrees/*/results/_repro/`. Each holds a full environment.
+
+Outcome:
+
 ## Not covered on Friday unless there is time
 
 - Measuring the 720p K correction (`reachy.py:58`, DECISIONS entry 7) needs a target of known size at a measured distance; no probe exists. Until then nothing in the paper may rely on the corrected K, and the S8 v2 check "no UNVERIFIED marks left in jigsaw/robot/" stays open for this one mark even after Friday.
