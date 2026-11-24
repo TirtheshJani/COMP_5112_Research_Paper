@@ -203,6 +203,18 @@ def test_run_units_stops_on_a_strong_contradiction(workers):
     assert [r["pattern"] for r in e.value.rows] == ["strong"]
 
 
+def test_run_units_reports_every_strong_row_that_finished_not_just_the_first():
+    with pytest.raises(Contradiction) as e:
+        run_units(fake_unit, [("strong", 2), ("strong", 5)], workers=2)
+    assert [r["wrong_le1_misread"] for r in e.value.rows] == [2, 5]
+
+
+def test_misread_cells_skips_an_empty_mask(clean_shot):
+    gr, M, truth = clean_shot
+    empty = GridRead(gr.cells, np.zeros_like(gr.mask), gr.H)
+    assert misread_cells(empty, M, truth) == (None, 0)
+
+
 def test_save_finding_writes_frame_and_cells(tmp_path):
     img = np.zeros((20, 30, 3), np.uint8)
     paths = save_finding(tmp_path / "findings", "puzzle_strong_single_trial3", image=img,

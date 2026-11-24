@@ -14,7 +14,7 @@ from functools import lru_cache
 import numpy as np
 
 from jigsaw.decode import build_table, decode_single
-from jigsaw.experiment.runner import classify, run_units, save_finding
+from jigsaw.experiment.runner import FINDINGS_DIR, classify, run_units, save_finding
 from jigsaw.patch import PATTERNS, load_torus
 from jigsaw.types import Position, Read
 
@@ -33,7 +33,7 @@ def torus_table(name: str):
     return build_table(torus(name), u=U, wrap=True)
 
 
-def dense_unit(arm: str, name: str, level, n: int, seed: int, findings_dir=None) -> list[dict]:
+def dense_unit(arm: str, name: str, level, n: int, seed: int, findings_dir=FINDINGS_DIR) -> list[dict]:
     """n trials of one arm, level and pattern; one row. E9 findings on strong go to findings_dir."""
     pat, table = torus(name), torus_table(name)
     R, C = pat.shape
@@ -59,7 +59,7 @@ def dense_unit(arm: str, name: str, level, n: int, seed: int, findings_dir=None)
         counts[kind] += 1
         if kind == "wrong" and m <= 1:
             counts["wrong_le1_misread"] += 1
-            if name == "strong" and findings_dir is not None:
+            if name == "strong":
                 save_finding(findings_dir, f"dense_{name}_{arm}_p{level}_seed{seed}_trial{t}", seen=seen,
                              truth_window=window, flips=flips.reshape(U, U), truth=[i, j, k], decision=repr(decision))
     return [{"experiment": "dense", "pattern": name, "decoder": "single", "arm": arm, "px_per_cell": "", "tilt": "",
@@ -68,7 +68,7 @@ def dense_unit(arm: str, name: str, level, n: int, seed: int, findings_dir=None)
              "mean_misread_cells": round(float(np.mean(misreads)), 6), "seed": seed}]
 
 
-def run_dense(arm: str, levels, n: int, seed: int, workers: int = 1, findings_dir=None) -> list[dict]:
+def run_dense(arm: str, levels, n: int, seed: int, workers: int = 1, findings_dir=FINDINGS_DIR) -> list[dict]:
     """One row per level and pattern. levels: flip probabilities for arm noise; arm forced1 ignores them.
 
     Raises runner.Contradiction on E9 after saving the offending cells to findings_dir.
