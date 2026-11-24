@@ -28,6 +28,14 @@ class Stable:
         self._misses = 0
         self._answered = False             # this presentation has been answered or given up
 
+    def gap(self) -> None:
+        """A frame was dropped: forget the run being counted (the announced piece is kept)."""
+        self._run, self._count = None, 0
+
+    def mark_answered(self) -> None:
+        """The caller answered this presentation itself (the ask command): no give-up follows."""
+        self._answered = True
+
     def update(self, d: Decision) -> Event | None:
         if not isinstance(d, Read):
             self._run, self._count = None, 0

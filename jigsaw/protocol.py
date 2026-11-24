@@ -14,6 +14,8 @@ never on a decode. STILL_IOU is a placeholder that the five-piece dry run checks
 Nominal angle: counter-clockwise as seen by the camera, from the back's upright position, so 90 is turn 1.
 
 Layout: <out>/r{row}_c{col}_a{angle:03d}/f{n}.png and f{n}.json (row, col zero-based front coordinates).
+Sidecar times: "time" is the wall clock when the file was written, after the frames were taken; "t" is the
+capture time on the frame source's monotonic clock (Frame has no wall-clock field).
 A presentation is written to a .partial folder and renamed when complete. A run skips complete presentations
 and deletes leftover .partial folders, so resuming never overwrites a saved frame.
 """
@@ -135,7 +137,8 @@ def capture(source: FrameSource, out_dir: str | Path, prompt: Callable[[str], No
             reference, taken = got
             partial.mkdir()
             for n, frame in enumerate(taken):
-                cv2.imwrite(str(partial / f"f{n}.png"), frame.image)
+                if not cv2.imwrite(str(partial / f"f{n}.png"), frame.image):
+                    raise OSError(f"could not write {partial / f'f{n}.png'}")
                 (partial / f"f{n}.json").write_text(json.dumps(_sidecar(row, col, angle, n, frame)))
             partial.rename(final)
             beep()

@@ -15,7 +15,6 @@ or 2 when any frame was read wrongly (everything is written first).
 import argparse
 import csv
 import json
-import math
 import shutil
 import statistics
 import subprocess
@@ -25,6 +24,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from jigsaw.experiment.stats import wilson
 from jigsaw.reader import PieceReader
 from jigsaw.types import Read, U
 from jigsaw.vision import undistort as undistort_image
@@ -37,21 +37,6 @@ COLUMNS = ("piece_row", "piece_col", "angle_deg", "frame_file", "kind", "row", "
 
 def git(*args: str) -> str:
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
-
-
-def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """Wilson score interval for k successes in n trials.
-
-    jigsaw.experiment.stats.wilson (S2) is not on this branch. This must give the same values; once S2 merges,
-    import it from there instead.
-    """
-    if n <= 0:
-        raise ValueError("n must be positive")
-    p, z2 = k / n, z * z
-    d = 1 + z2 / n
-    centre = (p + z2 / (2 * n)) / d
-    half = z * math.sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / d
-    return max(0.0, centre - half), min(1.0, centre + half)
 
 
 def allowed_turns(angle: int) -> set[int]:
@@ -187,8 +172,8 @@ def summary(rows: list[dict], flags: list[dict], sim: list[dict] | None, frames_
               f"Wrong reads: {n_wrong_primary} of {len(primary)} primary frames, {len(wrong)} of {len(rows)} frames."]
     if wrong:
         lines.append("This script does not count misread cells. Every wrong frame is listed under the label check and "
-                     "copied to results/findings/ for inspection; a wrong frame in a flagged presentation is probably an "
-                     "operator error.")
+                     "copied to results/findings/ for inspection; a wrong frame in a flagged presentation may be an "
+                     "operator error; inspect the saved frame before classifying it.")
     else:
         lines.append("Holds: no frame was read wrongly.")
     lines += ["", "## Prediction 4: robot against simulation", ""]
@@ -272,10 +257,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--undistort", action="store_true", help="undistort frames that carry K and D")
     ap.add_argument("--allow-dirty", action="store_true")
     a = ap.parse_args(argv)
-    if git("status", "--porcelain", "--untracked-files=no") and not a.allow_dirty:
+    dirty = bool(git("status", "--porcelain", "--untracked-files=no"))
+    if dirty and not a.allow_dirty:
         print("refusing to run with uncommitted tracked changes; commit them or pass --allow-dirty")
         return 1
-    commit = git("rev-parse", "--short", "HEAD")
+    commit = git("rev-parse", "--short", "HEAD") + ("-dirty" if dirty else "")
     rows = decode_folder(a.frames, commit, a.undistort)
     flags = label_check(rows)
     write_csv(rows, a.out)
