@@ -14,7 +14,9 @@ In Contrado's editor choose **Large Rectangle (x48, 10.04 in)**, **Print both si
 
 Each file is exactly the panel size the editor asks for, so the image should fill the panel edge to edge without any scaling. Check in the 3D preview that the back shows the black-and-white grid right to the edges.
 
-The editor showed CAD $88.80 for this size printed on both sides (23 Nov). Contrado ships in 1 to 2 working days and quotes 3 to 5 days for most international deliveries, from CAD $12.95 to Canada. Ordered by Wednesday, it should arrive before 1 December, but that is their estimate, not a guarantee.
+The editor showed CAD $88.80 for this size printed on both sides (23 Nov). Contrado ships in 1 to 2 working days and quotes 3 to 5 days for most international deliveries, from CAD $12.95 to Canada. Ordered on 24 November with the fastest shipping option offered at checkout, it can arrive before 1 December. With standard shipping it more likely lands between 30 November and 2 December. Both are Contrado's estimates, not guarantees.
+
+The same three pages are in Canva as "Contrado 48-piece Reachy jigsaw (front, back, tin)" (design DAHbx2OX5fg). Its PNG export was compared with these files and is pixel-identical, so downloading from Canva or using the files directly gives the same print.
 
 ## How the back works
 
