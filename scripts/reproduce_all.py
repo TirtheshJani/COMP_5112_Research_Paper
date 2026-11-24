@@ -1,12 +1,16 @@
 """Clean-clone reproduction (S8 Q1, Q2): python scripts/reproduce_all.py
 
 Clones the current commit into results/_repro/clone_<commit>, syncs the environment there, rebuilds the print PDF
-with scripts/make_print.py, compares it with the committed print/ PDF, runs the full test suite, and writes
-results/_repro/report.md. Exit code is non-zero if any step fails.
+with scripts/make_print.py, compares it with the committed print/ PDF, runs the full test suite, then (unless
+--skip-sims) regenerates the simulations into results/_regen/ inside the clone with the seed and n read from the
+committed CSVs, diffs each regenerated CSV against the committed one (every column except commit), reruns
+make_figures.py and checks sim_summary.md byte for byte. decode_physical.py runs only if the clone has stored frames.
+Writes results/_repro/report.md. Exit code is non-zero if any step fails.
 
-Not yet covered because the scripts do not exist at this commit: run_sim_dense.py, run_sim_puzzle.py,
-make_figures.py, decode_physical.py. Add them to STEPS when their workstreams are merged.
+Options: --allow-dirty, --skip-sims (quick run, Result says PASS (partial)), --workers N (puzzle simulation, default 6).
 """
+import argparse
+import csv
 import hashlib
 import os
 import re
@@ -30,8 +34,10 @@ EXPECTED_SKIPS = (
     # Tests that drive the robot are gated on JIGSAW_LIVE=1 and cannot run in a clone.
     "JIGSAW_LIVE=1",
 )
-NOT_COVERED = ("run_sim_dense.py", "run_sim_puzzle.py", "make_figures.py", "decode_physical.py",
-               "print/reachy_debruijn_jigsaw_preview.png (no script produces it)")
+NOT_COVERED = ("print/reachy_debruijn_jigsaw_preview.png (no script produces it)",)
+KEY_COLS = ("experiment", "pattern", "decoder", "arm", "px_per_cell", "tilt", "blur", "noise", "finger")
+SIM_CSVS = ("sim_dense.csv", "sim_puzzle.csv")
+SKIPPED_FRAMES = "skipped: no stored frames (physical session pending)"
 DPI = 300   # same resolution as tests/test_printing.py
 _SKIP_LINE = re.compile(r"^SKIPPED \[(\d+)\] (.+?:\d+): (.*)$")
 _SUMMARY = re.compile(r"\d+ (passed|failed|error)")
@@ -91,8 +97,124 @@ def compare_pdf(committed: Path, rebuilt: Path) -> tuple[bool, str]:
                 f"{'identical' if ok else 'DIFFER'}; differing pixel values per page: {diffs}")
 
 
+def seed_and_n(path: Path) -> tuple[int, int]:
+    """The single seed and single n recorded in a committed simulation CSV. Raises ValueError unless each is unique."""
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        raise ValueError(f"{path.name} has no rows")
+    found = {}
+    for col in ("seed", "n"):
+        values = sorted({r[col] for r in rows})
+        if len(values) != 1:
+            raise ValueError(f"{path.name}: column {col} is not unique: {values}")
+        found[col] = int(values[0])
+    return found["seed"], found["n"]
+
+
+def _keyed(path: Path) -> tuple[list[str], dict[tuple, dict[str, str]]]:
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        header = list(reader.fieldnames or [])
+        rows: dict[tuple, dict[str, str]] = {}
+        for r in reader:
+            key = tuple(r.get(c, "") for c in KEY_COLS)
+            if key in rows:
+                raise ValueError(f"{path.name}: duplicate row key {key}")
+            rows[key] = r
+    return header, rows
+
+
+def compare_csvs(committed: Path, regenerated: Path) -> dict:
+    """Compare two simulation CSVs by row key. Every column except commit must be equal and the row sets must match."""
+    h_c, rows_c = _keyed(committed)
+    h_r, rows_r = _keyed(regenerated)
+    columns: dict[str, int] = {}
+    differing = 0
+    both = rows_c.keys() & rows_r.keys()
+    for key in both:
+        bad = [c for c in h_c if c != "commit" and rows_c[key].get(c) != rows_r[key].get(c)]
+        differing += bool(bad)
+        for c in bad:
+            columns[c] = columns.get(c, 0) + 1
+    only_c, only_r = len(rows_c.keys() - rows_r.keys()), len(rows_r.keys() - rows_c.keys())
+    header_same = h_c == h_r
+    return {"rows_compared": len(both), "rows_differing": differing, "columns": dict(sorted(columns.items())),
+            "only_committed": only_c, "only_regenerated": only_r, "header_same": header_same,
+            "ok": differing == 0 and only_c == 0 and only_r == 0 and header_same}
+
+
+def same_bytes(a: Path, b: Path) -> bool:
+    return a.is_file() and b.is_file() and a.read_bytes() == b.read_bytes()
+
+
+def has_frames(frames: Path) -> bool:
+    return frames.is_dir() and any(p.is_file() for p in frames.rglob("*"))
+
+
+def describe_diff(name: str, r: dict) -> str:
+    cols = ", ".join(f"{c} ({n})" for c, n in r["columns"].items()) or "none"
+    head = "" if r["header_same"] else "; HEADER DIFFERS"
+    return (f"{name}: rows compared {r['rows_compared']}, rows differing {r['rows_differing']}, columns that differ: {cols}; "
+            f"rows only in committed {r['only_committed']}, only in regenerated {r['only_regenerated']}{head} -> "
+            f"{'identical except commit' if r['ok'] else 'FAIL'}")
+
+
+def run_sims(dest: Path, workers: int, log: list[dict]) -> tuple[bool, list[str]]:
+    """Regenerate both simulations in the clone into results/_regen/, diff against the committed CSVs, rerun the figures."""
+    regen = dest / "results" / "_regen"
+    regen.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    try:
+        seed_d, n_d = seed_and_n(dest / "results" / "sim_dense.csv")
+        seed_p, n_p = seed_and_n(dest / "results" / "sim_puzzle.csv")
+    except (ValueError, OSError) as e:
+        return False, [f"FAIL: cannot read seed and n from the committed CSVs: {e}"]
+    lines.append(f"Committed seed and n: dense seed {seed_d} n {n_d}; puzzle seed {seed_p} n {n_p}.")
+    ok = True
+    for script, seed, n, extra in (("run_sim_dense.py", seed_d, n_d, []), ("run_sim_puzzle.py", seed_p, n_p, ["--workers", str(workers)])):
+        name = "sim_dense.csv" if "dense" in script else "sim_puzzle.csv"
+        findings = f"results/_regen/findings_{name[4:-4]}"
+        code, _ = run(["uv", "run", "python", f"scripts/{script}", "--seed", str(seed), "--n", str(n),
+                       "--out", f"results/_regen/{name}", "--findings", findings, *extra], dest, log)
+        if code != 0 or not (regen / name).is_file():
+            ok = False
+            lines.append(f"{name}: FAIL, {script} exited {code}")
+            continue
+        try:
+            r = compare_csvs(dest / "results" / name, regen / name)
+        except ValueError as e:
+            ok = False
+            lines.append(f"{name}: FAIL, {e}")
+            continue
+        ok &= r["ok"]
+        lines.append(describe_diff(name, r))
+    if ok:
+        code, _ = run(["uv", "run", "python", "scripts/make_figures.py", "--puzzle", "results/_regen/sim_puzzle.csv",
+                       "--dense", "results/_regen/sim_dense.csv", "--out-dir", "results/_regen"], dest, log)
+        same = code == 0 and same_bytes(dest / "results" / "sim_summary.md", regen / "sim_summary.md")
+        ok &= same
+        lines.append(f"sim_summary.md byte-identical to committed: {'yes' if same else 'NO, FAIL'} (PDFs not compared byte for byte)")
+    else:
+        lines.append("make_figures.py not run: a simulation step failed.")
+    return ok, lines
+
+
+def run_physical(dest: Path, log: list[dict]) -> tuple[str, bool]:
+    if not has_frames(dest / "results" / "frames"):
+        return SKIPPED_FRAMES, True
+    code, out = run(["uv", "run", "python", "scripts/decode_physical.py", "--out", "results/_regen/physical.csv",
+                     "--summary", "results/_regen/physical_summary.md", "--findings", "results/_regen/findings_physical"], dest, log)
+    return f"exit {code}: {(out.splitlines() or [''])[-1]}", code == 0
+
+
 def main() -> int:
-    allow_dirty = "--allow-dirty" in sys.argv[1:]
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--allow-dirty", action="store_true")
+    ap.add_argument("--skip-sims", action="store_true", help="skip the simulation regeneration, diff and figure steps")
+    ap.add_argument("--workers", type=int, default=6, help="worker processes for run_sim_puzzle.py (16 ran the laptop out of memory)")
+    args = ap.parse_args(sys.argv[1:])
+    allow_dirty = args.allow_dirty
     log: list[dict] = []
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
@@ -110,6 +232,9 @@ def main() -> int:
     comparison = ""
     summary = ""
     skips: list[tuple[str, str, int, bool]] = []
+    sim_lines: list[str] = []
+    physical = "not run"
+    skipped_steps: list[str] = []
 
     code, _ = run(["git", "clone", "--no-hardlinks", "-q", str(ROOT), str(dest)], ROOT, log)
     steps_ok = code == 0
@@ -130,17 +255,30 @@ def main() -> int:
         summary, skips, ok = classify_pytest(out)
         failed |= not ok
         failed |= code != 0
+        if steps_ok and args.skip_sims:
+            skipped_steps = ["simulation regeneration (run_sim_dense.py, run_sim_puzzle.py)", "CSV diff", "make_figures.py check"]
+        elif steps_ok:
+            sim_ok, sim_lines = run_sims(dest, args.workers, log)
+            failed |= not sim_ok
+        if steps_ok:
+            physical, phys_ok = run_physical(dest, log)
+            failed |= not phys_ok
     failed |= not steps_ok or any(s["code"] != 0 for s in log)
 
     lines = ["# Reproduction report", "", f"Commit: {commit}", f"Clone: {dest.relative_to(ROOT)}", ""]
-    result = "FAIL" if failed else f"PASS (partial: {len(NOT_COVERED)} items not covered)"
+    result = "FAIL" if failed else ("PASS (partial; skipped: " + "; ".join(skipped_steps) + ")" if skipped_steps else "PASS")
     lines += [f"Result: {result}", ""]
-    lines += [f"PDF comparison: {comparison or 'not run'}", f"pytest summary: {summary or 'not run'}", ""]
+    lines += [f"PDF comparison: {comparison or 'not run'}", f"pytest summary: {summary or 'not run'}",
+              f"Physical decode: {physical}", ""]
+    if skipped_steps:
+        lines += ["Skipped by --skip-sims: " + "; ".join(skipped_steps), ""]
+    if sim_lines:
+        lines += ["## Simulation regeneration", ""] + sim_lines + [""]
     lines += [f"Note: {n}" for n in notes]
     lines += ["", "## Skipped tests", ""]
     lines += [f"- {n} x {loc}: {reason} ({'expected' if exp else 'UNEXPECTED, run fails'})" for loc, reason, n, exp in skips] or ["- none"]
     lines += [""]
-    lines += ["Not covered (not in the repository at this commit, or no script produces it): " + ", ".join(NOT_COVERED), "", "## Commands", ""]
+    lines += ["Not covered (no script produces it): " + ", ".join(NOT_COVERED), "", "## Commands", ""]
     for s in log:
         lines += [f"- exit {s['code']}: `{s['cmd']}` (cwd `{Path(s['cwd']).name}`)"]
     REPRO.joinpath("report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

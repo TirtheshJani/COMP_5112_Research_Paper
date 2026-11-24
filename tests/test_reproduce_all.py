@@ -100,3 +100,84 @@ def test_main_refuses_a_dirty_tree(monkeypatch):
     monkeypatch.setattr(ra.subprocess, "run", lambda cmd, **kw: Done("abc123\n" if "rev-parse" in cmd else " M jigsaw/x.py\n"))
     monkeypatch.setattr(ra.sys, "argv", ["reproduce_all.py"])
     assert ra.main() == 2
+
+
+HEADER = "experiment,pattern,decoder,arm,px_per_cell,tilt,blur,noise,finger,n,correct,seed,commit"
+
+
+def _csv(path, rows, header=HEADER):
+    path.write_text(header + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
+    return path
+
+
+def test_seed_and_n_unique(tmp_path):
+    p = _csv(tmp_path / "a.csv", ["dense,s,single,f,,,,,,300,5,1,abc", "dense,o,single,f,,,,,,300,6,1,abc"])
+    assert ra.seed_and_n(p) == (1, 300)
+
+
+def test_two_seeds_raise(tmp_path):
+    p = _csv(tmp_path / "a.csv", ["dense,s,single,f,,,,,,300,5,1,abc", "dense,o,single,f,,,,,,300,6,2,abc"])
+    with pytest.raises(ValueError, match="seed"):
+        ra.seed_and_n(p)
+
+
+def test_two_n_raise(tmp_path):
+    p = _csv(tmp_path / "a.csv", ["dense,s,single,f,,,,,,300,5,1,abc", "dense,o,single,f,,,,,,100,6,1,abc"])
+    with pytest.raises(ValueError, match="n"):
+        ra.seed_and_n(p)
+
+
+def test_compare_identical_except_commit_passes(tmp_path):
+    a = _csv(tmp_path / "a.csv", ["dense,s,single,f,,,,,,300,5,1,abc", "dense,o,single,f,,,,,,300,6,1,abc"])
+    b = _csv(tmp_path / "b.csv", ["dense,o,single,f,,,,,,300,6,1,def", "dense,s,single,f,,,,,,300,5,1,def"])
+    r = ra.compare_csvs(a, b)
+    assert r["ok"] and r["rows_compared"] == 2 and r["rows_differing"] == 0 and r["columns"] == {}
+
+
+def test_compare_one_count_differs_fails(tmp_path):
+    a = _csv(tmp_path / "a.csv", ["dense,s,single,f,,,,,,300,5,1,abc", "dense,o,single,f,,,,,,300,6,1,abc"])
+    b = _csv(tmp_path / "b.csv", ["dense,s,single,f,,,,,,300,5,1,def", "dense,o,single,f,,,,,,300,7,1,def"])
+    r = ra.compare_csvs(a, b)
+    assert not r["ok"] and r["rows_differing"] == 1 and r["columns"] == {"correct": 1}
+
+
+def test_compare_missing_row_fails(tmp_path):
+    a = _csv(tmp_path / "a.csv", ["dense,s,single,f,,,,,,300,5,1,abc", "dense,o,single,f,,,,,,300,6,1,abc"])
+    b = _csv(tmp_path / "b.csv", ["dense,s,single,f,,,,,,300,5,1,def"])
+    r = ra.compare_csvs(a, b)
+    assert not r["ok"] and r["only_committed"] == 1 and r["only_regenerated"] == 0
+
+
+def test_compare_extra_row_and_header_change_fail(tmp_path):
+    a = _csv(tmp_path / "a.csv", ["dense,s,single,f,,,,,,300,5,1,abc"])
+    b = _csv(tmp_path / "b.csv", ["dense,s,single,f,,,,,,300,5,1,abc", "dense,o,single,f,,,,,,300,6,1,abc"])
+    assert ra.compare_csvs(a, b)["only_regenerated"] == 1
+    c = _csv(tmp_path / "c.csv", ["dense,s,single,f,,,,,,300,5,1,abc"], header=HEADER + ",extra")
+    assert not ra.compare_csvs(a, c)["ok"]
+
+
+def test_compare_duplicate_key_raises(tmp_path):
+    a = _csv(tmp_path / "a.csv", ["dense,s,single,f,,,,,,300,5,1,abc", "dense,s,single,f,,,,,,300,6,1,abc"])
+    with pytest.raises(ValueError, match="duplicate"):
+        ra.compare_csvs(a, a)
+
+
+def test_same_bytes(tmp_path):
+    (tmp_path / "a.md").write_bytes(b"x\n")
+    (tmp_path / "b.md").write_bytes(b"x\n")
+    (tmp_path / "c.md").write_bytes(b"y\n")
+    assert ra.same_bytes(tmp_path / "a.md", tmp_path / "b.md")
+    assert not ra.same_bytes(tmp_path / "a.md", tmp_path / "c.md")
+    assert not ra.same_bytes(tmp_path / "a.md", tmp_path / "missing.md")
+
+
+def test_has_frames(tmp_path):
+    assert not ra.has_frames(tmp_path / "frames")
+    (tmp_path / "frames").mkdir()
+    assert not ra.has_frames(tmp_path / "frames")
+    (tmp_path / "frames" / "f.npz").write_bytes(b"0")
+    assert ra.has_frames(tmp_path / "frames")
+
+
+def test_not_covered_lists_no_script_that_runs():
+    assert "run_sim_dense.py" not in " ".join(ra.NOT_COVERED)
