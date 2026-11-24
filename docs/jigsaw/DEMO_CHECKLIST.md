@@ -46,5 +46,5 @@ A thumb over a single cell is often still read: with a finger in the simulation,
 ## After
 
 1. Wait for the last nod or shake to finish (every gesture ends at neutral, `jigsaw/robot/reachy.py:38-40`), then say "stop" or press Ctrl+C.
-2. If the terminal printed "... head left at ...", run `uv run python scripts/probes/p4_nod.py --host <IP> --move`: one small nod that ends at neutral (seen on the simulator; Friday step 1c checks it on the robot).
+2. If the terminal printed "... head left at ...", run `uv run python scripts/probes/p4_nod.py --host <IP> --move`: one nod and then one shake, each ending at neutral, then it prints "done: nod and shake" (`scripts/probes/p4_nod.py:28-30`). Expect the shake; it is part of the probe, not a give-up. So far seen only on the simulator; Friday step 1c checks it on the robot.
 3. Power the robot off. Never call `goto_sleep()` (CLAUDE.md rule 7).
