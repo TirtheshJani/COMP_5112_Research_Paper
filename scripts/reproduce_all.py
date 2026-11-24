@@ -29,9 +29,10 @@ EXPECTED_SKIPS = (
     "Piper voice file absent",
     # Tests that drive the robot are gated on JIGSAW_LIVE=1 and cannot run in a clone.
     "JIGSAW_LIVE=1",
-    # Tests that need the robot hardware itself.
-    "requires the robot",
 )
+NOT_COVERED = ("run_sim_dense.py", "run_sim_puzzle.py", "make_figures.py", "decode_physical.py",
+               "print/reachy_debruijn_jigsaw_preview.png (no script produces it)")
+DPI = 300   # same resolution as tests/test_printing.py
 _SKIP_LINE = re.compile(r"^SKIPPED \[(\d+)\] (.+?:\d+): (.*)$")
 _SUMMARY = re.compile(r"\d+ (passed|failed|error)")
 
@@ -71,7 +72,7 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def render_pages(path: Path, px_per_mm: float = 4.0) -> list[np.ndarray]:
+def render_pages(path: Path, px_per_mm: float = DPI / 25.4) -> list[np.ndarray]:
     import pypdfium2 as pdfium
     pdf = pdfium.PdfDocument(str(path))
     return [pdf[i].render(scale=px_per_mm * 25.4 / 72).to_numpy() for i in range(len(pdf))]
@@ -86,7 +87,7 @@ def compare_pdf(committed: Path, rebuilt: Path) -> tuple[bool, str]:
         return False, f"PDF bytes differ and page counts differ ({len(pa)} vs {len(pb)})"
     diffs = [int((x != y).sum()) if x.shape == y.shape else -1 for x, y in zip(pa, pb)]
     ok = all(d == 0 for d in diffs)
-    return ok, (f"PDF bytes differ (sha256 {a[:16]} vs {b[:16]}); rendered pages at 4 px/mm "
+    return ok, (f"PDF bytes differ (sha256 {a[:16]} vs {b[:16]}); rendered pages at {DPI} dpi "
                 f"{'identical' if ok else 'DIFFER'}; differing pixel values per page: {diffs}")
 
 
@@ -115,7 +116,7 @@ def main() -> int:
     if steps_ok:
         steps_ok = run(["git", "checkout", "-q", commit], dest, log)[0] == 0
     if steps_ok:
-        steps_ok = run(["uv", "sync", *extras_to_sync()], dest, log)[0] == 0
+        steps_ok = run(["uv", "sync", "--locked", *extras_to_sync()], dest, log)[0] == 0
     if steps_ok:
         out_pdf = dest / "rebuilt" / "reachy_debruijn_jigsaw.pdf"
         out_pdf.parent.mkdir()
@@ -132,18 +133,18 @@ def main() -> int:
     failed |= not steps_ok or any(s["code"] != 0 for s in log)
 
     lines = ["# Reproduction report", "", f"Commit: {commit}", f"Clone: {dest.relative_to(ROOT)}", ""]
-    lines += [f"Result: {'FAIL' if failed else 'PASS'}", ""]
+    result = "FAIL" if failed else f"PASS (partial: {len(NOT_COVERED)} items not covered)"
+    lines += [f"Result: {result}", ""]
     lines += [f"PDF comparison: {comparison or 'not run'}", f"pytest summary: {summary or 'not run'}", ""]
     lines += [f"Note: {n}" for n in notes]
     lines += ["", "## Skipped tests", ""]
     lines += [f"- {n} x {loc}: {reason} ({'expected' if exp else 'UNEXPECTED, run fails'})" for loc, reason, n, exp in skips] or ["- none"]
     lines += [""]
-    lines += ["Not covered: run_sim_dense.py, run_sim_puzzle.py, make_figures.py, decode_physical.py (not in the repository at this commit).",
-              "print/reachy_debruijn_jigsaw_preview.png is not regenerated: no script in the repository produces it.", "", "## Commands", ""]
+    lines += ["Not covered (not in the repository at this commit, or no script produces it): " + ", ".join(NOT_COVERED), "", "## Commands", ""]
     for s in log:
         lines += [f"- exit {s['code']}: `{s['cmd']}` (cwd `{Path(s['cwd']).name}`)"]
     REPRO.joinpath("report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"{'FAIL' if failed else 'PASS'}: see {REPRO / 'report.md'}")
+    print(f"{result}: see {REPRO / 'report.md'}")
     return 1 if failed else 0
 
 
