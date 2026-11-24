@@ -7,7 +7,12 @@ from jigsaw import types as T
 
 def piece_pose(H: np.ndarray, K: np.ndarray | None, D: np.ndarray | None,
                shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray] | None:
-    """rvec, tvec (mm) of the read grid's cell (0, 0) corner. shape is GridRead.cells.shape."""
+    """rvec, tvec (mm) of the read grid's cell (0, 0) corner. shape is GridRead.cells.shape.
+
+    H, K and D must refer to the same image space. PieceReader reads the raw frame and never
+    undistorts, so pass the camera's D. If H came from an already undistorted image, pass D=None
+    (passing D would correct the distortion twice).
+    """
     if K is None:
         return None
     h, w = shape

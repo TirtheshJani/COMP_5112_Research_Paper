@@ -193,11 +193,12 @@ def read_grid(bgr: np.ndarray) -> GridRead | Reject:
         inside = (pts[..., 0] >= 0) & (pts[..., 0] < wid) & (pts[..., 1] >= 0) & (pts[..., 1] < hgt)
         vis &= inside & inner_strict[yi, xi]
     # uniform centre: the four quarter points between centre and corners agree with the centre
+    spread = max(1.0, float(np.ptp(vals[vis]))) if vis.any() else 1.0   # fixed before the loop, so corner order does not matter
     for pts in corners.values():
         mid = 0.5 * (pts + centres)
         v2 = cv2.remap(gray_s, mid[..., 0].astype(np.float32), mid[..., 1].astype(np.float32),
                        cv2.INTER_LINEAR, borderValue=-1)
-        vis &= np.abs(v2 - vals) < 0.35 * max(1.0, np.ptp(vals[vis]) if vis.any() else 1.0)
+        vis &= np.abs(v2 - vals) < 0.35 * spread
     if vis.sum() < 25:
         return Reject("no_window")
     v = vals[vis].astype(np.float32)

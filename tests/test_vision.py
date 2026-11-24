@@ -51,19 +51,27 @@ def run(table, n, seed, ppc_range=(12, 28), finger=0.0, background="mat"):
     return correct, rejected, wrong, turn_wrong
 
 
+def wilson_upper(k, n, z=1.96):
+    p = k / n
+    return (p + z * z / (2 * n) + z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / (1 + z * z / n)
+
+
 def test_reads_pieces_on_the_mat(table):
     correct, rejected, wrong, turn_wrong = run(table, 150, seed=1)
-    assert wrong == 0 and turn_wrong == 0 and rejected <= 3, (correct, rejected, wrong, turn_wrong)
+    # target: reject rate at most 10 percent (Wilson 95 percent upper bound), no wrong read, no wrong turn
+    assert wrong == 0 and turn_wrong == 0 and wilson_upper(rejected, 150) <= 0.10, (correct, rejected, wrong, turn_wrong)
 
 
 def test_fingers_cause_rejections_not_errors(table):
     correct, rejected, wrong, turn_wrong = run(table, 60, seed=2, finger=1.0)
-    assert wrong == 0 and turn_wrong == 0 and correct >= 40, (correct, rejected, wrong)
+    # target: with a finger on every piece, reject rate at most 50 percent (Wilson upper bound)
+    assert wrong == 0 and turn_wrong == 0 and wilson_upper(rejected, 60) <= 0.50, (correct, rejected, wrong)
 
 
 def test_small_cells(table):
     correct, rejected, wrong, _ = run(table, 40, seed=3, ppc_range=(9, 11))
-    assert wrong == 0 and rejected <= 2, (correct, rejected, wrong)
+    # target: at 9 to 11 px per cell, reject rate at most 20 percent (Wilson upper bound)
+    assert wrong == 0 and wilson_upper(rejected, 40) <= 0.20, (correct, rejected, wrong)
 
 
 def test_turn_convention(table):

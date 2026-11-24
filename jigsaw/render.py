@@ -97,6 +97,7 @@ def photograph(gray: np.ndarray, alpha: np.ndarray, rng: np.random.Generator, an
     img = bg * (1 - al) + paper * al
     if finger:
         ys, xs = np.nonzero(al[..., 0] > 0.5)
+    if finger and len(xs) > 0:
         k = int(rng.integers(len(xs)))
         tip = np.array([xs[k], ys[k]], float)
         out = tip - np.array([Wd / 2, H / 2])
