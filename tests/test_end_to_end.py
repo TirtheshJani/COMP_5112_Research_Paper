@@ -26,14 +26,24 @@ from jigsaw import types as T
 from jigsaw.reader import PieceReader
 from jigsaw.render import photograph
 from jigsaw.types import Read
-from jigsaw.voice.phrases import TURN_SENTENCE, phrase_read
+from jigsaw.voice.phrases import phrase_read
 
 ROOT = Path(__file__).resolve().parent.parent
 PXMM = 6.0          # page render resolution: 21.6 px per cell
 TILE = 64
 FINDINGS = ROOT / "results" / "findings"
 SENTENCE = re.compile(r"Row (\d+), column (\d+)\. (.*)")
-TURN_OF = {s: k for k, s in TURN_SENTENCE.items()}
+# Hard-coded on purpose, not read from phrases.TURN_SENTENCE: a swap of the left and right sentences must fail here.
+# The second number is the counter-clockwise quarter turns the sentence asks for, seen from the picture side
+# (left = counter-clockwise), so the rotation applied to the front tile comes from the words, not from the numeric turn.
+EXPECTED = {
+    0: ("It is the right way up.", 0),
+    1: ("Turn it a quarter turn to the left.", 1),
+    2: ("Turn it upside down.", 2),
+    3: ("Turn it a quarter turn to the right.", 3),
+}
+MIN_GAP = 0.5       # grey levels (0-255) by which the announced rotation must beat the best other rotation
+# Thinly discriminated tiles on the committed picture (gap to the best wrong rotation, grey levels): (4,0) 0.88, (5,4) 0.97, (5,0) 1.37.
 
 
 def render_page(pdf, index):
@@ -103,21 +113,20 @@ def test_every_piece_is_read_phrased_and_shows_its_picture_tile(sheets):
             save_frame(frame, r, c, k)
             continue
         m = SENTENCE.fullmatch(phrase_read(d))
-        row, col, turn = int(m.group(1)) - 1, int(m.group(2)) - 1, TURN_OF[m.group(3)]
-        turns_used.add(turn)
-        if (row, col, turn) != (r, c, k):
-            wrong.append(((r, c, k), (row, col, turn)))
+        row, col, text = int(m.group(1)) - 1, int(m.group(2)) - 1, m.group(3)
+        sentence, quarter_turns = EXPECTED[k]
+        turns_used.add(k)
+        if (row, col, text) != (r, c, sentence):
+            wrong.append(((r, c, k), (row, col, text)))
             save_frame(frame, r, c, k)
             continue
-        if k % 2:
-            assert turn != (4 - k) % 4, "announced turn is the clockwise count, not the counter-clockwise one"
         # Front of the true piece after flipping about the vertical axis: the picture turned k quarter turns clockwise.
         in_hand = np.rot90(tile_from_page1(page1, r, c), -k)
-        shown = np.rot90(in_hand, turn)                     # announced turn, counter-clockwise from the picture side
+        shown = np.rot90(in_hand, quarter_turns)            # rotation read off the sentence, counter-clockwise from the picture side
         truth = tile_from_picture(pic, row, col)
         errs = [mad(np.rot90(shown, q), truth) for q in range(4)]
-        # Relative test only: the announced turn must beat the other three rotations. An absolute bound was dropped as unexplained.
-        if not errs[0] < min(errs[1:]):
+        # The announced rotation must beat the other three by at least MIN_GAP. An absolute bound was dropped as unexplained.
+        if not errs[0] + MIN_GAP <= min(errs[1:]):
             save_frame(frame, r, c, k)
             bad.append(((r, c, k), [round(e, 1) for e in errs]))
     assert not rejected, f"{len(rejected)} of 35 rejected: {rejected}"
