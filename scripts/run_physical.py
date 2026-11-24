@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from jigsaw.protocol import ANGLES, capture
+from jigsaw.types import PUZZLE_COLS, PUZZLE_ROWS
 
 ROOT = Path(__file__).resolve().parents[1]
 BEEP_RATE = 16000
@@ -33,12 +34,16 @@ def beep_pcm(hz: float = 880.0, seconds: float = 0.15) -> np.ndarray:
 
 
 def parse_pieces(values: list[str] | None) -> list[tuple[int, int]] | None:
-    """One-based "row,col" as printed on the answer key, to zero-based front coordinates."""
+    """One-based "row,col" as printed on the answer key, to zero-based front coordinates.
+
+    Raises ValueError for a malformed value or one outside the puzzle."""
     if values is None:
         return None
     pieces = []
     for v in values:
         r, c = (int(x) for x in v.split(","))
+        if not (1 <= r <= PUZZLE_ROWS and 1 <= c <= PUZZLE_COLS):
+            raise ValueError(f"piece {v!r} is outside the {PUZZLE_ROWS} x {PUZZLE_COLS} puzzle")
         pieces.append((r - 1, c - 1))
     return pieces
 
@@ -50,7 +55,10 @@ def main(argv: list[str] | None = None, robot=None, synthesize=None) -> dict:
     ap.add_argument("--out", default=str(ROOT / "results" / "frames"))
     ap.add_argument("--pieces", nargs="+", default=None, help='one-based "row,col" pieces, for a dry run')
     a = ap.parse_args(argv)
-    pieces = parse_pieces(a.pieces)
+    try:
+        pieces = parse_pieces(a.pieces)
+    except ValueError as e:
+        ap.error(f'--pieces wants one-based "row,col" inside the puzzle: {e}')
     if synthesize is None:
         from jigsaw.voice.tts import synthesize
     if robot is None:

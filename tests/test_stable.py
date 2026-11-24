@@ -95,3 +95,30 @@ def test_need_and_miss_limit_are_parameters():
     assert feed(s, [A]) == ["announce"]
     s = Stable(need=1, miss_limit=2)
     assert feed(s, [MISS, MISS, MISS]) == [None, "give_up", None]
+
+
+def test_gap_forgets_the_run_but_keeps_the_announced_piece():
+    s = Stable()
+    assert feed(s, [A, A]) == [None, None]
+    s.gap()
+    assert s.update(A) is None          # the run restarted: this is read 1, not read 3
+    s = Stable()
+    feed(s, [A, A, A])
+    s.gap()
+    assert s.last == A and feed(s, [A, A, A]) == [None] * 3
+
+
+def test_gap_resets_the_unanswered_run_of_misses_only_through_the_count():
+    s = Stable(need=3)
+    feed(s, [A, A])
+    s.gap()
+    assert feed(s, [A, A, A]) == [None, None, "announce"]
+
+
+def test_mark_answered_stops_a_later_give_up():
+    s = Stable(miss_limit=3)
+    feed(s, [MISS, MISS])
+    s.mark_answered()
+    assert feed(s, [MISS] * 5) == [None] * 5
+    feed(s, [NONE])                      # a new presentation can give up again
+    assert feed(s, [MISS] * 3) == [None, None, "give_up"]

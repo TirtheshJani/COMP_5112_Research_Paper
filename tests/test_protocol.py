@@ -122,7 +122,7 @@ def test_the_protocol_never_decodes():
     tree = ast.parse((ROOT / "jigsaw" / "protocol.py").read_text())
     imported = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module.startswith("jigsaw"):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("jigsaw"):
             imported |= {f"{node.module}.{a.name}" for a in node.names}
         elif isinstance(node, ast.Import):
             assert not any(a.name.startswith("jigsaw") for a in node.names)
@@ -339,3 +339,49 @@ def test_decode_with_undistort_reads_the_saved_intrinsics(dp, tmp_path):
     protocol.capture(robot, tmp_path, robot.prompt, robot.beep, pieces=[(3, 2)], angles=(90,))
     rows = dp.decode_folder(tmp_path, commit="x", undistort=True)
     assert [r["kind"] for r in rows] == ["correct"] * 5 and rows[0]["turn"] == 1
+
+
+def test_a_failed_imwrite_raises_and_leaves_no_complete_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(protocol.cv2, "imwrite", lambda *a, **k: False)
+    op = Operator()
+    with pytest.raises(OSError, match="f0.png"):
+        protocol.capture(op, tmp_path, op.prompt, op.beep, pieces=[(3, 2)], angles=(90,))
+    assert not (tmp_path / "r3_c2_a090").exists()
+
+
+@pytest.mark.parametrize("bad", ["8,1", "1,10", "0,1", "1,0", "2", "a,b", "1,2,3"])
+def test_parse_pieces_rejects_out_of_range_or_malformed(bad):
+    rp = load("run_physical")
+    with pytest.raises(ValueError):
+        rp.parse_pieces([bad])
+
+
+def test_parse_pieces_accepts_the_corners():
+    rp = load("run_physical")
+    assert rp.parse_pieces(["1,1", f"{PUZZLE_ROWS},{PUZZLE_COLS}"]) == [(0, 0), (PUZZLE_ROWS - 1, PUZZLE_COLS - 1)]
+
+
+def test_run_physical_main_exits_with_a_usage_error_on_a_bad_piece(tmp_path):
+    rp = load("run_physical")
+    with pytest.raises(SystemExit) as e:
+        rp.main(["--out", str(tmp_path), "--pieces", "99,1"], robot=object(), synthesize=lambda t: None)
+    assert e.value.code == 2
+
+
+def test_decode_physical_uses_the_experiment_wilson(dp):
+    from jigsaw.experiment.stats import wilson
+    assert dp.wilson is wilson
+    assert dp._share(7, 10).endswith("; {:.3f} to {:.3f})".format(*wilson(7, 10)))
+
+
+def test_decode_physical_marks_a_dirty_run_in_the_commit_column(dp, monkeypatch, tmp_path):
+    monkeypatch.setattr(dp, "git", lambda *args: " M jigsaw/app.py" if args[0] == "status" else "abc1234")
+    seen = []
+    monkeypatch.setattr(dp, "decode_folder", lambda frames, commit, undistort=False: seen.append(commit) or [])
+    dp.main(["--frames", str(tmp_path), "--out", str(tmp_path / "x.csv"), "--summary", str(tmp_path / "s.md"),
+             "--sim", str(tmp_path / "none.csv"), "--findings", str(tmp_path / "f"), "--allow-dirty"])
+    assert seen == ["abc1234-dirty"]
+
+
+def test_decode_physical_summary_does_not_call_a_wrong_frame_probably_operator_error(dp):
+    assert "probably an operator error" not in Path(dp.__file__).read_text()

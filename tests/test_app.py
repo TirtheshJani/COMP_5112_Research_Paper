@@ -468,3 +468,24 @@ def test_run_demo_viewer_publishes_to_an_event_bus(demo, monkeypatch):
     sub = buses[0]
     kinds = [sub.items.popleft()["type"] for _ in range(len(sub.items))]
     assert kinds[:2] == ["board", "frame"] and "announce" in kinds
+
+
+def test_a_dropped_frame_ends_the_run_of_equal_reads(monkeypatch):
+    # two reads, a dropped frame (audio playing), then one read: not three in a row, so no announcement
+    decisions = [Read(3, 2, 1)] * 3
+    monkeypatch.setattr(app, "PieceReader", lambda: ScriptedReader(decisions))
+    audio = FakeAudioOut()
+    states = iter([False, False, True, False])
+    audio.is_playing = lambda: next(states)
+    out = app.run(FakeFrameSource([np.zeros((4, 4, 3), np.uint8)] * 4), FakeGestures(), audio, synthesize=silent)
+    assert out["dropped"] == 1 and out["announced"] == []
+
+
+def test_an_ask_that_gave_up_stops_stable_giving_up_again(monkeypatch):
+    decisions = [Reject("no_window")] * 5 + [Reject("low_contrast")] * 12
+    monkeypatch.setattr(app, "PieceReader", lambda: ScriptedReader(decisions))
+    spoken = Spoken()
+    listener = Script([None] * 5 + ["ask"])
+    out = app.run(FakeFrameSource([np.zeros((4, 4, 3), np.uint8)] * 17), FakeGestures(), FakeAudioOut(),
+                  listener=listener, synthesize=spoken, clock=lambda: -1e9)
+    assert out["gave_up"] == 1 and out["dropped"] == 0

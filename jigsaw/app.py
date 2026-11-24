@@ -115,6 +115,7 @@ def run(source: FrameSource, gestures: Gestures, audio_out: AudioOut, bus=None, 
             ask = True
         if audio_out.is_playing() or frame.t < quiet_until:
             out["dropped"] += 1
+            stable.gap()
             continue
         d = reader.read(frame.image)
         if bus is not None:
@@ -126,6 +127,7 @@ def run(source: FrameSource, gestures: Gestures, audio_out: AudioOut, bus=None, 
             reason = "" if d.reason == "no_grid" else d.reason      # no_grid ends the presentation
         if ask:
             ask = False
+            stable.mark_answered()
             if isinstance(d, Read):
                 stable.last = d
                 announce(d)
