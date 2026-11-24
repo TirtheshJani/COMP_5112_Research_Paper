@@ -9,7 +9,8 @@ Requirements are from `docs/jigsaw/S8_verification.md` (Spec, Q1 to Q11, and the
 Verified in this report:
 
 - Every count and interval in `results/sim_summary.md` (20 counts, 10 intervals) was recomputed from the two CSVs by two separate scripts, neither using repository code. All match exactly (Q3).
-- The three S2 runs (df9ec89, 46eb97b, 8f3b33a) give identical count columns; I compared the files of all three myself (Q2). None of them was a fresh clone.
+- From a fresh clone, the locked environment sync, the print rebuild (all four pages pixel-identical at 300 dpi) and the full test suite pass: 390 passed, 2 skipped at 5cdb036; 401 passed, 2 skipped at 82c03ec. Both skips are the Piper voice tests, which need a git-ignored file (Q1).
+- `sim_dense.csv` regenerated in a fresh clone at cd2d5b6 matches the committed file in all 12 rows, every column except `commit`. `sim_puzzle.csv` matches in all 288 rows, every column except `commit`, across the three S2 runs (df9ec89, 46eb97b, 8f3b33a); I compared the files myself. Those three ran in a clean worktree, not a fresh clone (Q2).
 - `tests/test_end_to_end.py` passes at 5cdb036 (1 passed in 7.46 s), and it fails when the turn 1 and turn 3 sentences are swapped (Q5).
 - Six conventions traced to every use. All code agrees; the spoken turn sentence and the camera's channel order stay open until Friday (Q4).
 - Every signature in `CONTRACTS.md` matches the code, with documented additions (Q7).
@@ -23,14 +24,13 @@ Headline numbers (simulation, seed 1, n = 300 per condition, commit column 8f3b3
 
 Pending:
 
-- Q1 and Q2 results: the full `reproduce_all.py` run (the orchestrator fills these in).
-- v2 clean-clone run of `tests/test_printing.py` and `tests/test_vision.py`: same run.
+- Q1, and Q2 for the puzzle: `run_sim_puzzle.py` and `make_figures.py` have not yet run inside a fresh clone. The command that closes both is in Q1.
 - Prediction 4, Q11 timing, the label check of `results/physical.csv` against the answer key, and the robot `UNVERIFIED` marks: Friday.
 - The turn sentence (A13, runbook step 5) and BGR order (runbook step 1b): Friday.
 
 Found during this check (details in the sections named):
 
-1. `scripts/reproduce_all.py` at 5cdb036 does not run the simulations or `make_figures.py`; it lists them as "not covered" (Q1). Commit 9ac5db4, which adds them, is on `fix/a4-print-verify` and not in `main`.
+1. `scripts/reproduce_all.py` at 5cdb036 did not run the simulations or `make_figures.py`; it listed them as "not covered". 9ac5db4 added them and reached `main` in the merge at 82c03ec. The first full run at 82c03ec then failed because the print rebuild left the clone dirty; cd2d5b6 fixed that (Q1).
 2. `FRIDAY_RUNBOOK.md` step 6 lists "an ask answer can be followed by a shake for the same piece (DECISIONS 22)" as known behaviour. A4 app F4 (e64b1ec) fixed that: `app.py:130` calls `Stable.mark_answered()`, and `stable.py:56-57` then blocks the give-up (Q11 section, "Documentation drift").
 3. `tests/test_end_to_end.py:52` converts the pypdfium2 render with `COLOR_RGB2GRAY`, but pypdfium2 5.15.2 returns BGR. The test still passes; the conversion nearly triples the tile error (Q4, channel order).
 4. The v2 check "no UNVERIFIED marks remain in `jigsaw/robot/`" cannot pass after Friday as planned: `reachy.py:58` (the 720p K correction) has no Friday step (v2 checks).
@@ -38,27 +38,55 @@ Found during this check (details in the sections named):
 
 ## Q1: clean-clone reproduction
 
-Result: **pending the full reproduce_all run (orchestrator fills this in).**
+Result: **not met yet.** No run has reached exit code 0 with the simulations included. From a fresh clone, everything up to and including the dense simulation has passed. The puzzle regeneration and `make_figures.py` have not run inside a fresh clone.
 
-What `scripts/reproduce_all.py` does at 5cdb036: it clones the current commit into `results/_repro/clone_<commit>` (lines 102 and 114), checks out the commit (117), runs `uv sync --locked` with every optional extra except `robot` (119, 55-58), rebuilds the print PDF with `scripts/make_print.py` and compares it with the committed PDF, by bytes and then rendered at 300 dpi (121-127, 81-91), runs `uv run pytest -rs` (129), accepts only the skip reasons "Piper voice file absent" and "JIGSAW_LIVE=1" (27-32), and writes `results/_repro/report.md`.
+What `scripts/reproduce_all.py` does at cd2d5b6 (docstring, lines 1-10, and `main`): it clones the current commit into `results/_repro/clone_<commit>`, runs `uv sync --locked` with every optional extra except `robot`, rebuilds the print PDF with `scripts/make_print.py` into `results/_rebuilt/` inside the clone and compares it with the committed PDF (bytes, then rendered at 300 dpi), and runs `uv run pytest -rs`, accepting only the skip reasons "Piper voice file absent" and "JIGSAW_LIVE=1". Then `run_sims` (line 174) stops if `git status --porcelain` in the clone lists any path, regenerates both CSVs into `results/_regen/` with the seed and n read from the committed CSVs, diffs each against the committed file by row key over every column except `commit`, reruns `make_figures.py` and compares `sim_summary.md` byte for byte. `decode_physical.py` runs only if the clone has stored frames. The script writes `results/_repro/report.md`. 9ac5db4 added the simulation steps; cd2d5b6 moved the rebuilt PDF under `results/` and added the clean-clone check.
 
-What it does not do at 5cdb036: run `run_sim_dense.py`, `run_sim_puzzle.py`, `make_figures.py` or `decode_physical.py`. They are in `NOT_COVERED` (lines 33-34), and the docstring (lines 7-8) says they "do not exist at this commit", which is no longer true: all four are in `scripts/` at 5cdb036. So the script at 5cdb036 does not meet Q1 as written. Commit 9ac5db4 ("reproduce_all regenerates the simulations and diffs them, Q1 and Q2"; parent 5cdb036; 158 lines changed in `reproduce_all.py`, 81 added to `tests/test_reproduce_all.py`) is on branch `fix/a4-print-verify` only. I did not read or run it.
+Three runs from a fresh clone:
 
-Earlier evidence, superseded: the S8 prep clean-clone run gave PASS, 119 passed, 2 skipped, both "Piper voice file absent" (DECISIONS 13). That was before S2, S6 and the A4 fixes merged. The orchestrator reports 392 passed, 0 failed for the full suite after the last code merge (0a414fd), in the main checkout, not a clone; I did not rerun the suite (another process may be using the machine).
+| Run | Script at | Clone | Result | Passed | Failed or stopped at |
+|---|---|---|---|---|---|
+| 1 | 5cdb036 | `.worktrees/s8-verify/results/_repro/clone_5cdb0368c6` | `PASS (partial: 5 items not covered)` | clone, locked sync, print rebuild, pytest: `390 passed, 2 skipped in 298.55s` | nothing failed; the simulations, `make_figures.py` and `decode_physical.py` were not in the script at this commit |
+| 2 | 82c03ec | `.worktrees/a4-print-verify/results/_repro/clone_82c03eced6` | `FAIL` | clone, locked sync, print rebuild, pytest: `401 passed, 2 skipped in 270.65s` | `run_sim_dense.py` and `run_sim_puzzle.py` both exited 2. The rebuild had written `rebuilt/` at the clone root, the tree was dirty, and the run scripts refuse a dirty tree (CLAUDE.md rule 4). This was not a reproduction failure |
+| 3 | cd2d5b6, 6 workers | `.worktrees/a4-print-verify/results/_repro/clone_cd2d5b65c5` | no `report.md` | clone, locked sync, print rebuild (all four pages pixel-identical at 300 dpi), pytest (exit 0), `run_sim_dense.py --seed 1 --n 300` (exit 0) | stopped by Claude Code while `run_sim_puzzle.py` was running, because the laptop had 3.6 of 15.2 GB free (other programs held most of it) |
 
-`decode_physical.py` on stored frames: no frames exist until Friday's capture.
+The reports of runs 1 and 2 are `results/_repro/report.md` in `.worktrees/s8-verify` and `.worktrees/a4-print-verify`; I read both. Both give the same PDF line: `PDF bytes differ (sha256 384c90659bc5fae9 vs 97649fe5fdd91098); rendered pages at 300 dpi identical; differing pixel values per page: [0, 0, 0, 0]`. The script accepts this, since only the rendered pages have to match. Both list the same two skips, `tests\test_voice_tts.py:31` and `:49`, "Piper voice file absent", which is expected because `assets/voice/` is git-ignored. Run 2 also reports `Physical decode: skipped: no stored frames`. Run 3 stopped before it wrote `report.md`, so its pytest summary line and skip list were not recorded; the orchestrator recorded its exit codes. The regenerated `results/_regen/sim_dense.csv` in its clone exists and carries commit cd2d5b65c5cc (Q2).
 
-To fill in: commit of the script that ran, exit code, pytest summary line, skip list, PDF comparison line, and the simulation diff from Q2.
+The S8 prep clean-clone run (PASS, 119 passed, 2 skipped, DECISIONS 13) predates S2, S6 and the A4 fixes; runs 1 to 3 supersede it.
+
+`decode_physical.py` on stored frames: no frames exist until Friday's capture, so the script skips it until then.
+
+What is still pending: `run_sim_puzzle.py --seed 1 --n 300` and `make_figures.py` inside a fresh clone, with the byte comparison of `sim_summary.md`, in a run that exits 0. TJ chose to finish Part A now and run this later, when the laptop has the memory (DECISIONS 36). From a clean checkout (no uncommitted tracked changes), about 50 minutes:
+
+```
+unset SSL_CERT_FILE && uv run python scripts/reproduce_all.py --workers 6
+```
+
+It is listed in `FRIDAY_RUNBOOK.md`, section "Any time, no robot: full clean-clone reproduction" (on `main` since 6e240b0). It closes Q1 when `results/_repro/report.md` says `Result: PASS`, and it closes Q2 for the puzzle when that report shows 0 differing rows apart from `commit` for both CSVs and a byte-identical `sim_summary.md`.
 
 ## Q2: regenerated CSVs against the committed ones
 
-Result: **pending the full reproduce_all run (orchestrator fills this in).**
+Result: **met for `sim_dense.csv` from a fresh clone. Met for `sim_puzzle.csv` from clean-worktree reruns only, not yet from a fresh clone.** `sim_summary.md` has not been regenerated in a fresh clone.
 
-| File | Rows | Compared | Differences except `commit` | Commit in committed file | Commit in regenerated file |
-|---|---|---|---|---|---|
-| `results/sim_puzzle.csv` | 288 | columns 1 to 17 | pending | 8f3b33a7095232296cb74811534ef13a68b71157 | pending |
-| `results/sim_dense.csv` | 12 | columns 1 to 17 | pending | 8f3b33a7095232296cb74811534ef13a68b71157 | pending |
-| `results/sim_summary.md` | | bytes | pending | | |
+The committed CSVs carry commit 8f3b33a7095232296cb74811534ef13a68b71157, seed 1 and n = 300.
+
+| File | Regenerated where | Fresh clone | Rows | Compared | Rows differing except `commit` | Commit in regenerated file |
+|---|---|---|---|---|---|---|
+| `results/sim_dense.csv` | Q1 run 3: `results/_regen/sim_dense.csv` in `clone_cd2d5b65c5` | yes | 12 | every column except `commit`, rows matched by key | 0 | cd2d5b65c5cce5898a0f0d6d072b6cbe9e5d0b0f |
+| `results/sim_puzzle.csv` | S2 runs 1 to 3 below (df9ec89, 46eb97b, 8f3b33a), in the S2 worktree with a clean tree | no | 288 in each | columns 1 to 17 (all but `commit`), byte for byte | 0 between any two of the three | df9ec89431ff..., 46eb97ba1085..., 8f3b33a70952... (run 3 is the committed file) |
+| `results/sim_summary.md` | not regenerated in a fresh clone; `make_figures.py` on the 8f3b33a CSVs in the clean worktree gave a byte-identical file (DECISIONS 31) | no | | bytes | identical | |
+
+The dense check, run from `.worktrees/s8-verify` (Python standard library, `csv.DictReader`, rows keyed by `pattern`, `arm` and `noise`, which are unique in this file):
+
+```
+rows 12 12; same keys True
+differing cells except commit 0
+commit committed {'8f3b33a7095232296cb74811534ef13a68b71157'}
+commit regen {'cd2d5b65c5cce5898a0f0d6d072b6cbe9e5d0b0f'}
+seed {'1'} {'1'}
+```
+
+The dense CSV also matched in all 12 rows across the three S2 runs, by the same `cut` and `cmp` check as the puzzle.
 
 What the three earlier runs show. All three used seed 1 and n = 300 and were run in the S2 worktree with a clean tree, not in a fresh clone (DECISIONS 17, 31):
 
@@ -68,9 +96,9 @@ What the three earlier runs show. All three used seed 1 and n = 300 and were run
 | 2 | 46eb97b (after the S2 review fix) | 16 | committed in f161830 |
 | 3 | 8f3b33a (after the A4 fixes) | 6 | committed in 919ad8c, current |
 
-I checked this myself with `cut -d, -f1-17` and `cmp`. Columns 1 to 17 of both CSVs are byte-identical between f161830 and the current files, and between the uncommitted df9ec89 files (289 and 13 lines, commit df9ec89431ff...) and the current files. `git diff --stat f161830 919ad8c` lists no change to `sim_summary.md`. The two figure PDFs changed bytes between those commits at the same sizes (19327 and 29458 bytes), so a byte comparison of the figures will fail; compare them rendered.
+I checked this myself with `cut -d, -f1-17` and `cmp`, and repeated the check at cd2d5b6 for this section. Columns 1 to 17 of both CSVs are byte-identical between f161830 and the current files, and between the uncommitted df9ec89 files (289 and 13 lines, commit df9ec89431ff...) and the current files. `git diff --stat f161830 919ad8c` lists no change to `sim_summary.md`, and `git log` shows f161830 as the last commit that changed it. The two figure PDFs changed bytes between those commits at the same sizes (19327 and 29458 bytes), so a byte comparison of the figures will fail; compare them rendered. `reproduce_all.py` does not compare them byte for byte (line 211).
 
-What this shows: the counts do not depend on the worker count (16 or 6), the S2 review fix to `misread_cells`, or the A4 change to `vision.read_grid` (DECISIONS 30). What it does not show: that a fresh clone with a freshly built environment gives the same numbers. Same machine, same environment and the same seed throughout, so the agreement is determinism, not independent replication.
+What this shows: the counts do not depend on the worker count (16 or 6), the S2 review fix to `misread_cells`, or the A4 change to `vision.read_grid` (DECISIONS 30). For the dense CSV, a fresh clone with an environment built from the same `uv.lock` gives the same numbers. For the puzzle, that has not been shown yet: the puzzle runs used the S2 worktree's environment, synced from the same `uv.lock`, not one built in a fresh clone. Everything ran on the same machine with the same seed, so the agreement is determinism, not independent replication.
 
 ## Q3: number trace
 
@@ -308,7 +336,7 @@ A gap to close on Friday: the demo log has no timestamps. `run_demo.py:66` sets 
 
 | Check | Status |
 |---|---|
-| Rerun `tests/test_printing.py` and `tests/test_vision.py` from a clean clone | **Pending the full reproduce_all run.** The clean-clone suite includes both files. An earlier clean clone passed them (DECISIONS 13), but that was before A4 core F3 changed `vision.read_grid` (b3d7f19, DECISIONS 30) |
+| Rerun `tests/test_printing.py` and `tests/test_vision.py` from a clean clone | **Met.** Both files ran from a fresh clone as part of the full suite at 5cdb036 (390 passed, 2 skipped) and at 82c03ec (401 passed, 2 skipped) (Q1 runs 1 and 2). Both skips were the Piper tests in `tests/test_voice_tts.py`, so every test in the two files passed. Both commits include A4 core F3's change to `vision.read_grid` (b3d7f19, DECISIONS 30) |
 | Compare `results/physical.csv` against the answer key page | **Pending Friday.** The answer key is page 3 of `print/reachy_debruijn_jigsaw.pdf` (`printing.py:133-138`), numbered one-based; `physical.csv` is zero-based, so key label = `piece_row + 1`, `piece_col + 1` |
 | No `UNVERIFIED` marks remain in `jigsaw/robot/` | **Not met; expected until Friday.** Five remain: `reachy.py:58` (K correction), `:144` (BGR), `:182` (gestures), `:211` (audio out), `:221` (audio in). Friday steps 1b, 1c and 2 can clear four. `reachy.py:58` has no Friday step, so this check will still fail after Friday unless the K measurement is added or the mark is accepted as a stated limit |
 
