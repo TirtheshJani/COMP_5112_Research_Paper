@@ -160,8 +160,22 @@ def describe_diff(name: str, r: dict) -> str:
             f"{'identical except commit' if r['ok'] else 'FAIL'}")
 
 
+def rebuilt_pdf_path(dest: Path) -> Path:
+    """The rebuilt print PDF lives under results/ (git-ignored) so the clone stays clean for the run scripts."""
+    return dest / "results" / "_rebuilt" / "reachy_debruijn_jigsaw.pdf"
+
+
+def clone_dirty_paths(dest: Path) -> list[str]:
+    """Paths `git status --porcelain` reports in the clone, tracked or untracked; the run scripts refuse to run if any exist."""
+    out = subprocess.run(["git", "status", "--porcelain"], cwd=dest, capture_output=True, text=True, check=True).stdout
+    return [line[3:] for line in out.splitlines()]
+
+
 def run_sims(dest: Path, workers: int, log: list[dict]) -> tuple[bool, list[str]]:
     """Regenerate both simulations in the clone into results/_regen/, diff against the committed CSVs, rerun the figures."""
+    dirty = clone_dirty_paths(dest)
+    if dirty:
+        return False, [f"FAIL: the clone is not clean, so the run scripts would refuse to run (dirty-tree check). Offending paths: {', '.join(dirty)}"]
     regen = dest / "results" / "_regen"
     regen.mkdir(parents=True, exist_ok=True)
     lines: list[str] = []
@@ -243,8 +257,8 @@ def main() -> int:
     if steps_ok:
         steps_ok = run(["uv", "sync", "--locked", *extras_to_sync()], dest, log)[0] == 0
     if steps_ok:
-        out_pdf = dest / "rebuilt" / "reachy_debruijn_jigsaw.pdf"
-        out_pdf.parent.mkdir()
+        out_pdf = rebuilt_pdf_path(dest)
+        out_pdf.parent.mkdir(parents=True)
         steps_ok = run(["uv", "run", "python", "scripts/make_print.py", "print/picture_portrait.png", str(out_pdf)], dest, log)[0] == 0
         if steps_ok:
             same, comparison = compare_pdf(dest / PDF, out_pdf)

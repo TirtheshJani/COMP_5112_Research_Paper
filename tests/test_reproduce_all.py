@@ -181,3 +181,36 @@ def test_has_frames(tmp_path):
 
 def test_not_covered_lists_no_script_that_runs():
     assert "run_sim_dense.py" not in " ".join(ra.NOT_COVERED)
+
+
+def _git(cwd, *args):
+    import subprocess
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def test_rebuilt_pdf_is_under_results_of_the_clone(tmp_path):
+    p = ra.rebuilt_pdf_path(tmp_path)
+    assert p == tmp_path / "results" / "_rebuilt" / "reachy_debruijn_jigsaw.pdf"
+
+
+def test_clone_dirty_paths_reports_untracked(tmp_path):
+    _git(tmp_path, "init", "-q")
+    (tmp_path / ".gitignore").write_text("results/\n")
+    _git(tmp_path, "add", ".gitignore")
+    _git(tmp_path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
+    assert ra.clone_dirty_paths(tmp_path) == []
+    p = ra.rebuilt_pdf_path(tmp_path)
+    p.parent.mkdir(parents=True)
+    p.write_bytes(b"x")
+    assert ra.clone_dirty_paths(tmp_path) == []
+    (tmp_path / "rebuilt").mkdir()
+    (tmp_path / "rebuilt" / "a.pdf").write_bytes(b"x")
+    assert ra.clone_dirty_paths(tmp_path) == ["rebuilt/"]
+
+
+def test_run_sims_fails_clearly_on_a_dirty_clone(tmp_path):
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "stray.txt").write_text("x")
+    ok, lines = ra.run_sims(tmp_path, 1, [])
+    assert not ok
+    assert "stray.txt" in "\n".join(lines)
