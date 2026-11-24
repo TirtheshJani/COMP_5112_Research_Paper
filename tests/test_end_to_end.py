@@ -47,9 +47,9 @@ MIN_GAP = 0.5       # grey levels (0-255) by which the announced rotation must b
 
 
 def render_page(pdf, index):
-    page = pdf[index]
+    page = pdf[index]  # pdfium bitmaps are BGR(A) unless rev_byteorder=True
     img = page.render(scale=PXMM * 25.4 / 72).to_numpy()
-    return cv2.cvtColor(img, cv2.COLOR_RGB2GRAY if img.shape[2] == 3 else cv2.COLOR_RGBA2GRAY)
+    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY if img.shape[2] == 3 else cv2.COLOR_BGRA2GRAY)
 
 
 def cut_back(page2, r, c):
