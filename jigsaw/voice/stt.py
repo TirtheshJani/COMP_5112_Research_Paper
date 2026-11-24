@@ -13,7 +13,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import numpy as np
 
 from jigsaw.types import AudioIn
-from jigsaw.voice.commands import Command, match_command
+from jigsaw.voice.commands import Command, _normalise, match_command
 
 log = logging.getLogger(__name__)
 
@@ -32,12 +32,12 @@ def whisper_transcriber(model_size: str = "tiny.en") -> Transcriber:
 
     tiny.en is a deliberate choice for speed on the laptop; the spec suggests small.en. V8 (nine of ten) is not yet measured.
     """
-    from faster_whisper import WhisperModel  # UNVERIFIED: faster-whisper README (WhisperModel(size, device, compute_type)), not run here
+    from faster_whisper import WhisperModel  # UNVERIFIED: faster_whisper/transcribe.py:620 (class WhisperModel(size, device, compute_type)), not run here
 
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
     def run(pcm: np.ndarray) -> str:
-        # UNVERIFIED: transcribe(audio ndarray, language, initial_prompt, beam_size, temperature) from the faster-whisper README
+        # UNVERIFIED: faster_whisper/transcribe.py:747 (WhisperModel.transcribe takes audio ndarray, language, initial_prompt, beam_size, temperature), not run here
         segments, _ = model.transcribe(pcm, language="en", initial_prompt=PROMPT, beam_size=1, temperature=0.0)
         return " ".join(s.text for s in segments).strip()
 
@@ -75,7 +75,8 @@ class CommandListener:
     def _run(self, pcm: np.ndarray) -> Command | None:
         self.warm()
         text = self._transcribe(pcm)
-        cmd = match_command(text)
+        # Whisper sometimes echoes its initial prompt on noise; the prompt contains "stop", so it must not count
+        cmd = None if _normalise(text) == _normalise(PROMPT) else match_command(text)
         log.info("heard %r -> %s", text, cmd)
         return cmd
 

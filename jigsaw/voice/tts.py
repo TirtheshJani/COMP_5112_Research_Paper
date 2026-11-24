@@ -45,7 +45,7 @@ def _load():
 
 def _render(text: str) -> tuple[np.ndarray, int]:
     voice = _load()
-    # UNVERIFIED: piper-tts >= 1.3 yields AudioChunk objects from synthesize(text).
+    # UNVERIFIED: piper/voice.py:333 (PiperVoice.synthesize yields AudioChunk, class at :41), piper-tts >= 1.3.
     chunks = [(c.audio_float_array, c.sample_rate) for c in voice.synthesize(text)]
     if not chunks:
         raise RuntimeError(f"Piper returned no audio for {text!r}")

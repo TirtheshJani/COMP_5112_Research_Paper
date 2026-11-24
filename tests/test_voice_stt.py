@@ -1,8 +1,9 @@
-import time
+import threading
 
 import numpy as np
 
 from jigsaw.fakes import FakeAudioIn
+from jigsaw.voice import stt
 from jigsaw.voice.stt import CommandListener
 
 CH = 1600  # 0.1 s
@@ -18,11 +19,11 @@ def quiet(n):
 
 
 def drain(lst, n):
-    """Poll n times, then keep polling briefly so worker-thread results are collected."""
+    """Poll n times, then wait on the worker thread until its pending results are collected."""
     out = [lst.poll() for _ in range(n)]
-    for _ in range(100):
-        out.append(lst.poll())
-        time.sleep(0.005)
+    for fut in list(lst._pending):
+        fut.exception(timeout=30)          # blocks until the worker is done, no sleeping
+    out += [lst.poll(), lst.poll()]
     lst.close()
     return [o for o in out if o]
 
@@ -81,17 +82,26 @@ def test_long_speech_is_cut_at_max():
 
 
 def test_poll_does_not_wait_for_slow_transcriber():
+    release = threading.Event()
+
     def slow(pcm):
-        time.sleep(0.5)
+        release.wait(timeout=30)
         return "stop"
 
     chunks = tone(8) + quiet(5) + quiet(3)
     lst = CommandListener(FakeAudioIn(chunks), lambda: False, transcribe=slow)
-    t0 = time.perf_counter()
     for _ in range(len(chunks)):
-        assert lst.poll() is None
-    assert time.perf_counter() - t0 < 0.3
+        assert lst.poll() is None          # the transcriber is blocked, yet every poll returns
+    release.set()
+    lst._pending[0].result(timeout=30)
+    assert lst.poll() == "stop"
     lst.close()
+
+
+def test_transcript_equal_to_the_whisper_prompt_is_not_a_command():
+    # Whisper can echo its initial prompt on noise; the prompt contains "stop", which must not stop the robot
+    out, heard = run(tone(8) + quiet(5), said=stt.PROMPT)
+    assert out == [] and len(heard) == 1
 
 
 def test_mute_edge_seen_even_when_no_chunk():
@@ -106,3 +116,4 @@ def test_whisper_transcriber_needs_faster_whisper():
     import pytest
 
     pytest.importorskip("faster_whisper", reason="faster-whisper not installed; V7 recognition and V8 unmeasured")
+    assert callable(stt.whisper_transcriber)

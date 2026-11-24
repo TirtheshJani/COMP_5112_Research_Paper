@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 import pytest
 
@@ -38,11 +36,18 @@ def test_synthesize_real():
     assert 1.0 <= len(pcm) / rate <= 6.0
 
 
-@needs_voice
-def test_warm_cache_fast_afterwards():
-    t0 = time.perf_counter()
+def test_warm_cache_renders_every_sentence_once(monkeypatch):
+    calls = []
+    monkeypatch.setattr(tts, "_render", lambda t: (calls.append(t), (np.zeros(10, np.float32), 22050))[1])
+    monkeypatch.setattr(tts, "_cache", {})
     assert tts.warm_cache() == 143
-    assert time.perf_counter() - t0 < 60
-    t1 = time.perf_counter()
-    tts.synthesize(tts.all_sentences()[0])
-    assert time.perf_counter() - t1 < 0.005
+    assert len(calls) == 143 and set(calls) == set(tts.all_sentences())
+    assert tts.warm_cache() == 143
+    assert len(calls) == 143                       # the second warm-up is served entirely from the cache
+
+
+@needs_voice
+def test_warm_cache_real_voice_serves_the_cached_object():
+    assert tts.warm_cache() == 143
+    first = tts.all_sentences()[0]
+    assert tts.synthesize(first) is tts.synthesize(first)

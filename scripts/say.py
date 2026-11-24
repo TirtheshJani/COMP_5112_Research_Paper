@@ -15,7 +15,7 @@ def main() -> None:
     import sounddevice as sd
 
     pcm, rate = synthesize(args.text)
-    # UNVERIFIED: sounddevice docs (sd.play(array, samplerate), sd.wait()); not run here
+    # UNVERIFIED: sounddevice.py:107 and :387 (play(data, samplerate), wait()); not run here
     sd.play(pcm, rate)
     sd.wait()
 

@@ -46,7 +46,7 @@ def resample(pcm: np.ndarray, rate: int, out_rate: int) -> np.ndarray:
     if rate == out_rate or len(pcm) == 0:
         return pcm.astype(np.float32)
     x = pcm.astype(np.float64)
-    if out_rate < rate:
+    if out_rate < rate and len(x) >= 63:             # a shorter signal would sit in the filter's zero padding
         fc = 0.45 * out_rate / rate                  # cycles per input sample, below the new Nyquist
         n = np.arange(-31, 32)
         h = 2 * fc * np.sinc(2 * fc * n) * np.hamming(len(n))
@@ -138,7 +138,7 @@ class ReachyRobot:
                 if now - last_warn >= STALL_WARN_S:
                     log.warning("no new camera frame for %.1f s; still waiting", now - last_new)
                     last_warn = now
-                time.sleep(0.005)
+                self._sleep(0.005)
                 continue
             image = prev = image.copy()
             # UNVERIFIED: BGR channel order (media/webrtc_client_gstreamer.py:170); needs the red-object check in p2.
@@ -146,11 +146,11 @@ class ReachyRobot:
             last_new = last_warn = self._clock()     # the wait for the next frame starts when the caller asks
 
     def _wait_for_frame(self, timeout: float) -> bool:
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < timeout:
+        t0 = self._clock()
+        while self._clock() - t0 < timeout:
             if self.mini.media.get_frame() is not None:
                 return True
-            time.sleep(0.02)
+            self._sleep(0.02)
         return False
 
     def _drain(self) -> None:
