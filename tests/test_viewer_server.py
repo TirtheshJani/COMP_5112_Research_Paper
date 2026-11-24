@@ -118,6 +118,7 @@ def test_serve_twice_on_one_port_starts_only_one(bus, caplog):
     try:
         with caplog.at_level(logging.WARNING):
             assert serve(bus, port=port) is None
+        assert "viewer" in caplog.text.lower()
     finally:
         first.shutdown()
         first.server_close()

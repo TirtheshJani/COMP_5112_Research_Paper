@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeDecision, initialState, reduce, type ViewerEvent } from "./state";
+import { describeDecision, initialState, reduce, reduceAction, type ViewerEvent } from "./state";
 
 const run = (events: ViewerEvent[], now = 0) => events.reduce((s, e) => reduce(s, e, now), initialState);
 
@@ -34,5 +34,18 @@ describe("describeDecision", () => {
   it("is one-based for reads and readable for rejects", () => {
     expect(describeDecision({ kind: "read", row: 3, col: 1, turn: 2 })).toBe("Row 4, column 2, turn 2");
     expect(describeDecision({ kind: "reject", reason: "no_grid" })).toBe("no grid");
+  });
+});
+
+describe("reduceAction", () => {
+  it("a reset drops a stale board and status, as after reconnecting to a restarted server", () => {
+    const s = run([{ type: "announce", row: 3, col: 1, turn: 2, text: "x" }]);
+    expect(s.placed).toEqual(["3,1"]);
+    expect(reduceAction(s, { type: "reset" }, 0)).toEqual(initialState);
+  });
+
+  it("passes viewer events through to reduce", () => {
+    const e: ViewerEvent = { type: "give_up", text: "Show me again." };
+    expect(reduceAction(initialState, e, 0)).toEqual(reduce(initialState, e, 0));
   });
 });
